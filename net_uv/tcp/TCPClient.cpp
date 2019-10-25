@@ -167,6 +167,17 @@ void TCPClient::send(uint32_t sessionId, char* data, uint32_t len)
 	pushOperation(TCP_CLI_OP_SENDDATA, pdata, len, sessionId);
 }
 
+void TCPClient::sendEx(uint32_t sessionId, char* data, uint32_t len)
+{
+	if (m_isStop)
+		return;
+
+	if (data == 0 || len <= 0)
+		return;
+
+	pushOperation(TCP_CLI_OP_SENDDATA, data, len, sessionId);
+}
+
 /// TCPClient
 
 bool TCPClient::setSocketNoDelay(bool enable)

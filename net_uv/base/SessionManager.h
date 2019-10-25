@@ -16,6 +16,8 @@ public:
 
 	virtual void send(uint32_t sessionID, char* data, uint32_t len) = 0;
 
+	virtual void sendEx(uint32_t sessionID, char* data, uint32_t len) = 0;
+
 	virtual void disconnect(uint32_t sessionID) = 0;
 	
 protected:

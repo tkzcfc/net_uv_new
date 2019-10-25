@@ -21,6 +21,7 @@
 using namespace net_uv;
 
 Client* pClient = NULL;
+NetMsgMgr* msgMng = nullptr;
 bool show_main_logger = true;
 bool show_imgui_demo = false;
 static char szIP[256] = "127.0.0.1";
@@ -73,6 +74,7 @@ void initClient()
 		else if (status == 1)
 		{
 			Logger::getInstance().addLog("[%d]Successful connection\n", session->getSessionID());
+			msgMng->onConnect(session->getSessionID());
 		}
 		else if (status == 2)
 		{
@@ -85,6 +87,7 @@ void initClient()
 		Logger::getInstance().addLog("[%d]Disconnect\n", session->getSessionID());
 		canConnect = true;
 		isLogin = false;
+		msgMng->onDisconnect(session->getSessionID());
 	});
 
 	pClient->setRemoveSessionCallback([](Client*, Session* session) {
@@ -93,7 +96,29 @@ void initClient()
 
 	pClient->setRecvCallback([](Client*, Session* session, char* data, uint32_t len)
 	{
-		Logger::getInstance().addLog("[%d]recv data[%d]:%s", session->getSessionID(), len, data);
+		msgMng->onBuff(session->getSessionID(), data, len);
+	});
+
+	pClient->connect(szIP, uPort, ControlSessionID);
+	isLogin = false;
+
+
+
+	msgMng = new NetMsgMgr();
+	msgMng->setUserData(pClient);
+	msgMng->setCloseSctCallback([](NetMsgMgr* mgr, uint32_t sessionID)
+	{
+		((Client*)mgr->getUserData())->disconnect(sessionID);
+	});
+
+	msgMng->setSendCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
+	{
+		((Client*)mgr->getUserData())->sendEx(sessionID, data, len);
+	});
+
+	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
+	{
+		Logger::getInstance().addLog("[%d]recv data[%d]:%s\n", sessionID, len, data);
 
 		const char szControlResult[] = "conrol client";
 		if (len == sizeof(szControlResult) - 1 && memcmp(szControlResult, data, len) == 0)
@@ -101,9 +126,6 @@ void initClient()
 			isLogin = true;
 		}
 	});
-
-	pClient->connect(szIP, uPort, ControlSessionID);
-	isLogin = false;
 }
 
 const char* Application_GetName()
@@ -188,7 +210,7 @@ void Application_Frame()
 				static char buf[256] = { 0 };
 				if (ImGui::InputText("input", buf, 256, ImGuiInputTextFlags_EnterReturnsTrue))
 				{
-					pClient->send(ControlSessionID, buf, strlen(buf));
+					msgMng->sendMsg(ControlSessionID, buf, strlen(buf));
 					buf[0] = '\0';
 				}
 			}
@@ -197,7 +219,7 @@ void Application_Frame()
 				if (ImGui::Button("login"))
 				{
 					static const char szControlCMD[] = "control";
-					pClient->send(ControlSessionID, (char*)szControlCMD, sizeof(szControlCMD));
+					msgMng->sendMsg(ControlSessionID, (char*)szControlCMD, sizeof(szControlCMD));
 				}
 			}
 		}

@@ -3,7 +3,7 @@
 
 using namespace net_uv;
 
-Session* controlClient = NULL;
+int32_t controlClient = -1;
 bool gServerStop = false;
 std::vector<Session*> allSession;
 
@@ -23,6 +23,7 @@ int main(int argc, const char*argv[])
 	}
 
 	Server* svr = NULL;
+	NetMsgMgr* msgMng = nullptr;
 	
 	if (svrType == 0)
 	{
@@ -33,19 +34,20 @@ int main(int argc, const char*argv[])
 		svr = new KCPServer();
 	}
 
-	svr->setCloseCallback([](Server* svr)
+
+	msgMng = new NetMsgMgr();
+	msgMng->setUserData(svr);
+	msgMng->setCloseSctCallback([](NetMsgMgr* mgr, uint32_t sessionID)
 	{
-		printf("svr closed\n");
-		gServerStop = true;
+		((Server*)mgr->getUserData())->disconnect(sessionID);
 	});
 
-	svr->setNewConnectCallback([](Server* svr, Session* session)
+	msgMng->setSendCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
 	{
-		allSession.push_back(session);
-		printf("[%d] %s:%d join svr\n", session->getSessionID(), session->getIp().c_str(), session->getPort());
+		((Server*)mgr->getUserData())->sendEx(sessionID, data, len);
 	});
 
-	svr->setRecvCallback([=](Server* svr, Session* session, char* data, uint32_t len)
+	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
 	{
 		char* msg = (char*)fc_malloc(len + 1);
 		memcpy(msg, data, len);
@@ -53,35 +55,55 @@ int main(int argc, const char*argv[])
 
 		if (strcmp(msg, "control") == 0)
 		{
-			session->send("conrol client", strlen("conrol client"));
-			controlClient = session;
+			mgr->sendMsg(sessionID, "conrol client", strlen("conrol client"));
+			controlClient = sessionID;
 		}
-		else if (controlClient == session && strcmp(msg, "close") == 0)
+		else if (controlClient == sessionID && strcmp(msg, "close") == 0)
 		{
-			svr->stopServer();
+			((Server*)mgr->getUserData())->stopServer();
 		}
-		else if (controlClient == session && strcmp(msg, "print") == 0)
+		else if (controlClient == sessionID && strcmp(msg, "print") == 0)
 		{
 			printMemInfo();
 		}
-		else if (controlClient == session && strstr(msg, "send"))
+		else if (controlClient == sessionID && strstr(msg, "send"))
 		{
 			char* sendbegin = strstr(msg, "send") + 4;
 			for (auto &it : allSession)
 			{
-				if (it != controlClient)
+				if (it->getSessionID() != controlClient)
 				{
-					it->send(sendbegin, strlen(sendbegin));
+					mgr->sendMsg(it->getSessionID(), sendbegin, strlen(sendbegin));
 				}
 			}
 		}
 		else
 		{
-			session->send(data, len);
+			mgr->sendMsg(sessionID, data, len);
 		}
 		fc_free(msg);
 
 		//printf("%s:%d received %d bytes\n", session->getIp().c_str(), session->getPort(), len);
+	});
+
+
+	svr->setCloseCallback([=](Server* svr)
+	{
+		printf("svr closed\n");
+		gServerStop = true;
+		delete msgMng;
+	});
+
+	svr->setNewConnectCallback([=](Server* svr, Session* session)
+	{
+		msgMng->onConnect(session->getSessionID());
+		allSession.push_back(session);
+		printf("[%d] %s:%d join svr\n", session->getSessionID(), session->getIp().c_str(), session->getPort());
+	});
+
+	svr->setRecvCallback([=](Server* svr, Session* session, char* data, uint32_t len)
+	{
+		msgMng->onBuff(session->getSessionID(), data, len);
 	});
 
 	svr->setDisconnectCallback([=](Server* svr, Session* session)
@@ -92,10 +114,11 @@ int main(int argc, const char*argv[])
 			allSession.erase(it);
 		}
 		printf("[%d] %s:%d leave svr\n", session->getSessionID(), session->getIp().c_str(), session->getPort());
-		if (session == controlClient)
+		if (session->getSessionID() == controlClient)
 		{
-			controlClient = NULL;
+			controlClient = -1;
 		}
+		msgMng->onDisconnect(session->getSessionID());
 	});
 
 	bool issuc = svr->startServer("0.0.0.0", port, false, 0xFFFF);

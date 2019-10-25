@@ -26,6 +26,8 @@ set(NET_UV_BASE_SRC
   base/SessionManager.h
   base/Socket.cpp
   base/Socket.h
+  base/md5.cpp
+  base/md5.h
 )
 
 set(NET_UV_COMMON_SRC
@@ -95,6 +97,13 @@ set(NET_UV_UDP_SRC
     udp/UDPSocket.h
 )
 
+set(NET_UV_NET_MSG_MGR_SRC
+    msg/NetMsgMgr.cpp
+    msg/NetMsgMgr.h
+    msg/NetMsgUtils.cpp
+    msg/NetMsgUtils.h
+)
+
 set(NET_UV_SRC
     net_uv.h
     ${NET_UV_BASE_SRC}
@@ -104,6 +113,7 @@ set(NET_UV_SRC
     ${NET_UV_P2P_SRC}
 	${NET_UV_TCP_SRC}
     ${NET_UV_UDP_SRC}
+    ${NET_UV_NET_MSG_MGR_SRC}
 )
 
 

@@ -3,6 +3,7 @@
 // base
 #include "base/Buffer.h"
 #include "base/Mutex.h"
+#include "base/md5.h"
 #include "base/DNSCache.h"
 
 // tcp
@@ -32,3 +33,5 @@
 #include "http/HttpServer.h"
 #include "http/HttpDetail.h"
 
+// msg
+#include "msg/NetMsgMgr.h"
