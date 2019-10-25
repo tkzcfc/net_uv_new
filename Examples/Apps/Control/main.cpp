@@ -118,7 +118,7 @@ void initClient()
 
 	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
 	{
-		Logger::getInstance().addLog("[%d]recv data[%d]:%s\n", sessionID, len, data);
+		Logger::getInstance().addLog("[%d]recv data[%d]:%s\n", sessionID, len, std::string(data, len).c_str());
 
 		const char szControlResult[] = "conrol client";
 		if (len == sizeof(szControlResult) - 1 && memcmp(szControlResult, data, len) == 0)

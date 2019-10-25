@@ -52,14 +52,18 @@ int main(int argc, const char*argv[])
 
 	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len) 
 	{
-		if (!cmdResolve(data, sessionID))
+		char* msg = (char*)fc_malloc(len + 1);
+		memcpy(msg, data, len);
+		msg[len] = '\0';
+
+		if (!cmdResolve(msg, sessionID))
 		{
 			if (len < 100)
 			{
 				sprintf(szWriteBuf, "this is %d send data...", sessionID);
-				if (strcmp(szWriteBuf, data) != 0)
+				if (strcmp(szWriteBuf, msg) != 0)
 				{
-					printf("Illegal message received:[%s]\n", data);
+					printf("Illegal message received:[%s]\n", msg);
 				}
 			}
 			else
@@ -71,6 +75,7 @@ int main(int argc, const char*argv[])
 		{
 		session->disconnect();
 		}*/
+		fc_free(msg);
 	});
 
 
