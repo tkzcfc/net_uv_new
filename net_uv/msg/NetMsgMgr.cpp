@@ -88,6 +88,12 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 			if (subv >= 0)
 			{
 				char* pMsg = (char*)fc_malloc(recvBuf->getDataLength());
+				if (pMsg == NULL)
+				{
+					recvBuf->clear();
+					executeDisconnect(sessionID);
+					return;
+				}
 				recvBuf->get(pMsg);
 
 				char* src = pMsg + NetMsgHeadLen;

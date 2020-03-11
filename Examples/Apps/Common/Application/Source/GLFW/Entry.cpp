@@ -132,13 +132,16 @@ int main(int, char**)
 #endif
     GLFWwindow* window = glfwCreateWindow(1280, 720, Application_GetName(), NULL, NULL);
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1); // Enable vsync
+	glfwSwapInterval(1); // Enable vsync
+	// tell GLFW to capture our mouse
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+
     gl3wInit();
 
     ImGui::CreateContext();
 
     // Setup ImGui binding
-    ImGui_ImplGlfwGL3_Init(window, true);
+	ImGui_ImplGlfwGL3_Init(window, true);
 
     // Load Fonts
     // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
@@ -156,7 +159,7 @@ int main(int, char**)
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
     //IM_ASSERT(font != NULL);
 
-    io.MouseDrawCursor = true;
+    io.MouseDrawCursor = false;
 
     ImVec4 clear_color = ImVec4(0.125f, 0.125f, 0.125f, 1.00f);
 
@@ -191,6 +194,7 @@ int main(int, char**)
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui::Render();
         glfwSwapBuffers(window);
+		Sleep(1);
     }
 
     Application_Finalize();

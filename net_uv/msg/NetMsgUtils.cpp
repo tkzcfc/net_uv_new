@@ -39,8 +39,16 @@ char* net_uv_decode(MD5& M, const char* data, uint32_t len, uint32_t &outLen)
 	outLen = 0;
 
 	int32_t datalen = len - tcp_uv_hashlen;
+	if (datalen <= 0)
+	{
+		return NULL;
+	}
 
 	char* p = (char*)fc_malloc(datalen + net_uv_encodeKeyLen + 1);
+	if (p == NULL)
+	{
+		return NULL;
+	}
 
 	memcpy(p, data + tcp_uv_hashlen, datalen);
 	memcpy(p + datalen, net_uv_encodeKey, net_uv_encodeKeyLen);
