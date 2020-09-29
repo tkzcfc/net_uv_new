@@ -134,7 +134,7 @@ const char* Application_GetName()
 
 void Application_Initialize()
 {
-	Exception::registerException("p2pPeer.dump");
+	Exception::registerException("p2pPeer.dmp");
 
 	net_uv::setNetUVLogPrintFunc([](int32_t level, const char* buf)
 	{

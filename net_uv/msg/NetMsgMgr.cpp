@@ -62,6 +62,7 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 			pMsg->len = 0;
 			pMsg->type = NetMsgHead::PONG;
 			m_sendCall(this, sessionID, (char*)pMsg, NetMsgHeadLen);
+			fc_free(pMsg);
 		}break;
 		case NetMsgHead::PONG:
 		{}break;
@@ -98,9 +99,9 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 
 				char* src = pMsg + NetMsgHeadLen;
 
-#if UV_ENABLE_MD5_CHECK == 1
+#if UV_ENABLE_DATA_CHECK == 1
 				uint32_t recvLen = 0;
-				char* recvData = net_uv_decode(this->m_md5, src, h->len, recvLen);
+				char* recvData = net_uv_decode(src, h->len, recvLen);
 
 				if (recvData != NULL && recvLen > 0)
 				{
@@ -177,24 +178,20 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, char* data, uint32_t len)
 		return;
 	}
 
-#if UV_ENABLE_MD5_CHECK == 1
+#if UV_ENABLE_DATA_CHECK == 1
 	uint32_t encodelen = 0;
-	char* encodedata = net_uv_encode(this->m_md5, data, len, encodelen);
-	if (encodedata == NULL)
+	char* p = net_uv_encode(data, len, NetMsgHeadLen, encodelen);
+	if (p == NULL)
 	{
 		assert(0);
 		return;
 	}
-	uint32_t sendlen = NetMsgHeadLen + encodelen;
-	char* p = (char*)fc_malloc(sendlen);
-
 	NetMsgHead* h = (NetMsgHead*)p;
 	h->len = encodelen;
 	h->type = NetMsgHead::NetMsgType::MSG;
 
-	memcpy(p + NetMsgHeadLen, encodedata, encodelen);
+	uint32_t sendlen = NetMsgHeadLen + encodelen;
 
-	fc_free(encodedata);
 #else
 	uint32_t sendlen = NetMsgHeadLen + len;
 	char* p = (char*)fc_malloc(sendlen);
@@ -215,9 +212,7 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, char* data, uint32_t len)
 		{
 			if (sendlen < NET_UV_WRITE_MAX_LEN)
 			{
-				char* tmp = (char*)fc_malloc(sendlen);
-				memcpy(tmp, p + curIndex, sendlen);
-
+				char* tmp = p + curIndex;
 				m_sendCall(this, sessionID, tmp, sendlen);
 
 				curArrIndex++;
@@ -226,9 +221,7 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, char* data, uint32_t len)
 			}
 			else
 			{
-				char* tmp = (char*)fc_malloc(NET_UV_WRITE_MAX_LEN);
-				memcpy(tmp, p + curIndex, NET_UV_WRITE_MAX_LEN);
-
+				char* tmp = p + curIndex;
 				m_sendCall(this, sessionID, tmp, NET_UV_WRITE_MAX_LEN);
 
 				curArrIndex++;
@@ -241,6 +234,7 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, char* data, uint32_t len)
 	else
 	{
 		m_sendCall(this, sessionID, p, sendlen);
+		fc_free(p);
 	}
 }
 
@@ -276,6 +270,7 @@ void NetMsgMgr::updateFrame()
 				pMsg->len = 0;
 				pMsg->type = NetMsgHead::PING;
 				m_sendCall(this, it->sessionID, (char*)pMsg, NetMsgHeadLen);
+				fc_free(pMsg);
 			}
 		}
 	}

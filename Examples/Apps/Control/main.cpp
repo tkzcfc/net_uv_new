@@ -113,7 +113,7 @@ void initClient()
 
 	msgMng->setSendCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
 	{
-		((Client*)mgr->getUserData())->sendEx(sessionID, data, len);
+		((Client*)mgr->getUserData())->send(sessionID, data, len);
 	});
 
 	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
@@ -207,8 +207,8 @@ void Application_Frame()
 		{
 			if (isLogin)
 			{
-				static char buf[256] = { 0 };
-				if (ImGui::InputText("input", buf, 256, ImGuiInputTextFlags_EnterReturnsTrue))
+				static char buf[65535] = { 0 };
+				if (ImGui::InputText("input", buf, 65535, ImGuiInputTextFlags_EnterReturnsTrue))
 				{
 					msgMng->sendMsg(ControlSessionID, buf, strlen(buf));
 					buf[0] = '\0';

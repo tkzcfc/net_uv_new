@@ -142,14 +142,6 @@ void TCPServer::send(uint32_t sessionID, char* data, uint32_t len)
 	pushOperation(TCP_SVR_OP_SEND_DATA, pdata, len, sessionID);
 }
 
-void TCPServer::sendEx(uint32_t sessionID, char* data, uint32_t len)
-{
-	if (!m_start || data == NULL || len <= 0)
-		return;
-
-	pushOperation(TCP_SVR_OP_SEND_DATA, data, len, sessionID);
-}
-
 void TCPServer::disconnect(uint32_t sessionID)
 {
 	pushOperation(TCP_SVR_OP_DIS_SESSION, NULL, 0, sessionID);

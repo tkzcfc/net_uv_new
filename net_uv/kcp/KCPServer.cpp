@@ -148,14 +148,6 @@ void KCPServer::send(uint32_t sessionID, char* data, uint32_t len)
 	pushOperation(KCP_SVR_OP_SEND_DATA, pdata, len, sessionID);
 }
 
-void KCPServer::sendEx(uint32_t sessionID, char* data, uint32_t len)
-{
-	if (!m_start || data == NULL || len <= 0)
-		return;
-
-	pushOperation(KCP_SVR_OP_SEND_DATA, data, len, sessionID);
-}
-
 void KCPServer::disconnect(uint32_t sessionID)
 {
 	pushOperation(KCP_SVR_OP_DIS_SESSION, NULL, 0, sessionID);

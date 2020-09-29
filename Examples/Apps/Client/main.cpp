@@ -47,7 +47,7 @@ int main(int argc, const char*argv[])
 
 	msgMng->setSendCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len) 
 	{
-		((Client*)mgr->getUserData())->sendEx(sessionID, data, len);
+		((Client*)mgr->getUserData())->send(sessionID, data, len);
 	});
 
 	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len) 

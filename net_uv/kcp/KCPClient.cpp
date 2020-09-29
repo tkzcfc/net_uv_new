@@ -161,17 +161,6 @@ void KCPClient::send(uint32_t sessionId, char* data, uint32_t len)
 	pushOperation(KCP_CLI_OP_SENDDATA, pdata, len, sessionId);
 }
 
-void KCPClient::sendEx(uint32_t sessionId, char* data, uint32_t len)
-{
-	if (m_isStop)
-		return;
-
-	if (data == 0 || len <= 0)
-		return;
-
-	pushOperation(KCP_CLI_OP_SENDDATA, data, len, sessionId);
-}
-
 /// Runnable
 void KCPClient::run()
 {

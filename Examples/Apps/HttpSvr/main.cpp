@@ -7,7 +7,7 @@ bool runLoop = true;
 
 int main(int argc, const char*argv[])
 {
-	Exception::registerException("httpSvr.dump");
+	Exception::registerException("httpSvr.dmp");
 
 	int32_t port = 1002;
 	if (argc >= 2)

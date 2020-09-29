@@ -5,7 +5,7 @@ using namespace net_uv;
 
 int main(int argc, const char*argv[])
 {
-	Exception::registerException("turn.dump");
+	Exception::registerException("turn.dmp");
 
 	int32_t port = 1001;
 	if (argc >= 2)

@@ -2,7 +2,6 @@
 
 
 #include "../base/Buffer.h"
-#include "../base/md5.h"
 #include <unordered_map>
 #include <time.h>
 
@@ -13,7 +12,9 @@ class NetMsgMgr;
 using NetMgrSendBuffCallback = void(*)(NetMsgMgr*, uint32_t, char*, uint32_t len);
 using NetMgrOnMsgCallback = void(*)(NetMsgMgr*, uint32_t, char*, uint32_t len);
 using NetMgrCloseSocketCallback = void(*)(NetMsgMgr*, uint32_t);
-
+/*
+ * 处理分包和心跳逻辑
+*/
 class NetMsgMgr
 {
 public:
@@ -75,8 +76,6 @@ private:
 
 	uint32_t				m_heartBeatCheckTime;
 	uint32_t				m_heartBeatLoseMaxCount;
-
-	MD5						m_md5;
 };
 
 

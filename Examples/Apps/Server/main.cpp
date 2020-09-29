@@ -1,4 +1,5 @@
 #include "net_uv.h"
+#include "msg/NetMsgUtils.h"
 #include "Exception.h"
 
 using namespace net_uv;
@@ -9,7 +10,7 @@ std::vector<Session*> allSession;
 
 int main(int argc, const char*argv[])
 {
-	Exception::registerException("svr.dump");
+	Exception::registerException("svr.dmp");
 
 	int32_t port = 1000;
 	int32_t svrType = 0;
@@ -44,7 +45,7 @@ int main(int argc, const char*argv[])
 
 	msgMng->setSendCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
 	{
-		((Server*)mgr->getUserData())->sendEx(sessionID, data, len);
+		((Server*)mgr->getUserData())->send(sessionID, data, len);
 	});
 
 	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
@@ -55,7 +56,7 @@ int main(int argc, const char*argv[])
 
 		if (strcmp(msg, "control") == 0)
 		{
-			mgr->sendMsg(sessionID, "conrol client", strlen("conrol client"));
+			mgr->sendMsg(sessionID, (char*)"conrol client", strlen("conrol client"));
 			controlClient = sessionID;
 		}
 		else if (controlClient == sessionID && strcmp(msg, "close") == 0)
@@ -145,7 +146,6 @@ int main(int argc, const char*argv[])
 	printf("\n-----------------------------\n");
 
 	system("pause");
-
 	return 0;
 }
 
