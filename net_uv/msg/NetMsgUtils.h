@@ -5,7 +5,7 @@
 NS_NET_UV_BEGIN
 
 // 是否启用数据校验
-#define UV_ENABLE_DATA_CHECK 0
+#define UV_ENABLE_DATA_CHECK 1
 // 最大消息长度10mb
 #define NET_UV_MAX_MSG_LEN (10485760)
 // 网络包分片大小
