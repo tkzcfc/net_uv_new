@@ -29,7 +29,7 @@ void net_uvLog(int32_t level, const char* format, ...)
 	}
 
 	va_list args;
-	char buf[1024];
+	char buf[10240];
 
 	va_start(args, format);
 	vsnprintf(buf, sizeof(buf), format, args);

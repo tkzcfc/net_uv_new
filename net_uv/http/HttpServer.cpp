@@ -89,7 +89,7 @@ void HttpServer::onSvrRecvCallback(Server* svr, Session* session, char* data, ui
 
 	if (!context->parseRequest(data, len))
 	{
-		static const char* badRequest = "HTTP/1.1 400 Bad Request\r\n\r\n";
+		static const char badRequest[] = "HTTP/1.1 400 Bad Request\r\n\r\n";
 		session->send((char*)badRequest, sizeof(badRequest));
 	}
 
