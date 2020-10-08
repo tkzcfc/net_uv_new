@@ -155,6 +155,7 @@ void printMemInfo()
 }
 
 #else
+void printMemInfo(){}
 #endif
 
 NS_NET_UV_END

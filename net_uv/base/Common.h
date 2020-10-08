@@ -40,7 +40,7 @@ void printMemInfo();
 
 #define fc_free free
 
-#define printMemInfo() ((void) 0) 
+void printMemInfo();
 
 #define NET_UV_LOG(level, format, ...) net_uvLog(level, format, ##__VA_ARGS__)
 
