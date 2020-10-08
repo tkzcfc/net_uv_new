@@ -288,8 +288,8 @@ void P2PPeer::onTimerRun()
 	{
 		for (auto it = m_burrowManager.begin(); it != m_burrowManager.end(); )
 		{
-			// 打洞数据发送次数超过30次，则停止发送
-			if (it->second.sendCount >= 30)
+			// 打洞数据发送次数超过20次，则停止发送
+			if (it->second.sendCount >= 20)
 			{
 				it = m_burrowManager.erase(it);
 			}
