@@ -20,7 +20,7 @@ bool UDPSocket::bind(const char* ip, uint32_t port)
 {
 	if (m_udp != NULL)
 	{
-		return 0;
+		return false;
 	}
 
 	this->setIp(ip);
@@ -32,7 +32,7 @@ bool UDPSocket::bind(const char* ip, uint32_t port)
 
 	if (r != 0)
 	{
-		return 0;
+		return false;
 	}
 
 	m_udp = (uv_udp_t*)fc_malloc(sizeof(uv_udp_t));
@@ -44,7 +44,7 @@ bool UDPSocket::bind(const char* ip, uint32_t port)
 
 	if (r != 0)
 	{
-		return 0;
+		return false;
 	}
 	net_adjustBuffSize((uv_handle_t*)m_udp, UDP_UV_SOCKET_RECV_BUF_LEN, UDP_UV_SOCKET_RECV_BUF_LEN);
 
@@ -62,7 +62,7 @@ bool UDPSocket::bind6(const char* ip, uint32_t port)
 {
 	if (m_udp != NULL)
 	{
-		return 0;
+		return false;
 	}
 
 	this->setIp(ip);
@@ -74,7 +74,7 @@ bool UDPSocket::bind6(const char* ip, uint32_t port)
 
 	if (r != 0)
 	{
-		return 0;
+		return false;
 	}
 
 	m_udp = (uv_udp_t*)fc_malloc(sizeof(uv_udp_t));
@@ -86,7 +86,7 @@ bool UDPSocket::bind6(const char* ip, uint32_t port)
 
 	if (r != 0)
 	{
-		return 0;
+		return false;
 	}
 	net_adjustBuffSize((uv_handle_t*)m_udp, UDP_UV_SOCKET_RECV_BUF_LEN, UDP_UV_SOCKET_RECV_BUF_LEN);
 
