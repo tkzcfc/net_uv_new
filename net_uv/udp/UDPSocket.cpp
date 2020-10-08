@@ -2,7 +2,7 @@
 
 NS_NET_UV_BEGIN
 
-#define UDP_UV_SOCKET_RECV_BUF_LEN (65535)
+#define UDP_UV_SOCKET_RECV_BUF_LEN (65536)
 
 UDPSocket::UDPSocket(uv_loop_t* loop)
 	: m_udp(NULL)
