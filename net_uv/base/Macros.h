@@ -17,13 +17,6 @@
 #pragma comment(lib, "Iphlpapi.lib")
 #pragma comment(lib,"Psapi.lib")
 #pragma comment(lib, "Userenv.lib")
-#define ThreadSleep(ms) Sleep(ms);
-
-#elif defined __linux__
-
-#include <unistd.h>
-#define ThreadSleep(ms) usleep((ms) * 1000)
-
 #endif
 
 

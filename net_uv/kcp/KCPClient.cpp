@@ -274,8 +274,6 @@ void KCPClient::executeOperation()
 void KCPClient::onIdleRun()
 {
 	executeOperation();
-
-	ThreadSleep(1);
 }
 
 void KCPClient::onTimerUpdateRun()

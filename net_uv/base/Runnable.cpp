@@ -62,11 +62,11 @@ bool Runnable::getThreadMsg()
 
 void Runnable::startIdle()
 {
-	m_idle.start(m_loop.ptr(), [](uv_idle_t* handle)
+	m_idle.start(m_loop.ptr(), [](uv_timer_t* handle)
 	{
-		Runnable* self = (Runnable*)handle->data;
-		self->onIdleRun();
-	}, this);
+		Runnable* svr = (Runnable*)handle->data;
+		svr->onIdleRun();
+	}, 1, 1, this);
 }
 
 void Runnable::stopIdle()

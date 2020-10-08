@@ -81,60 +81,6 @@ void UVLoop::free_buf(const uv_buf_t* buf)
 }
 
 
-
-
-UVIdle::UVIdle()
-{
-	m_start = false;
-	memset(&m_idle, 0, sizeof(uv_idle_t));
-}
-
-UVIdle::~UVIdle()
-{
-	stop();
-}
-
-uv_idle_t* UVIdle::ptr()
-{
-	return &m_idle;
-}
-
-void UVIdle::start(uv_loop_t* loop, uv_idle_cb cb, void* data)
-{
-	if (m_start)
-		return;
-
-	uv_idle_init(loop, &m_idle);
-	m_idle.data = data;
-
-	uv_idle_start(&m_idle, cb);
-
-	m_start = true;
-}
-
-void UVIdle::stop()
-{
-	if (m_start)
-	{
-		uv_idle_stop(&m_idle);
-	}
-}
-
-void UVIdle::close(uv_close_cb cb)
-{
-	if (!m_start)
-		return;
-	uv_close((uv_handle_t*)&m_idle, cb);
-	m_start = false;
-}
-
-bool UVIdle::isRunning()
-{
-	return m_start;
-}
-
-
-
 UVTimer::UVTimer()
 {
 	m_start = false;

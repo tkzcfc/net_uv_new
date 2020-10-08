@@ -50,10 +50,10 @@ void P2PTurn::stop()
 /// Runnable
 void P2PTurn::run()
 {
-	m_idle.start(m_loop.ptr(), [](uv_idle_t* handle)
+	m_idle.start(m_loop.ptr(), [](uv_timer_t* handle)
 	{
 		((P2PTurn*)handle->data)->onIdleRun();
-	}, this);
+	}, 1, 1, this);
 		
 	m_loop.run(UV_RUN_DEFAULT);
 	m_loop.close();
@@ -69,7 +69,6 @@ void P2PTurn::onIdleRun()
 		m_pipe.close();
 		m_idle.stop();
 	}
-	ThreadSleep(1);
 }
 
 void P2PTurn::onPipeRecvJsonCallback(P2PMessageID msgID, rapidjson::Document& document, uint64_t key, const struct sockaddr* addr)

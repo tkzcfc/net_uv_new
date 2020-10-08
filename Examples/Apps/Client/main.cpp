@@ -146,7 +146,7 @@ int main(int argc, const char*argv[])
 			}
 		}
 
-		ThreadSleep(1);
+		::Sleep(1);
 	}
 
 	delete client;

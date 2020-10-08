@@ -36,7 +36,7 @@ KCPSocket::~KCPSocket()
 
 	if (m_idle)
 	{
-		m_idle->~UVIdle();
+		m_idle->~UVTimer();
 		fc_free(m_idle);
 		m_idle = NULL;
 	}
@@ -363,15 +363,15 @@ void KCPSocket::startIdle()
 {
 	if (m_idle == NULL)
 	{
-		m_idle = (UVIdle*)fc_malloc(sizeof(UVIdle));
-		new (m_idle) UVIdle();
+		m_idle = (UVTimer*)fc_malloc(sizeof(UVTimer));
+		new (m_idle) UVTimer();
 	}
 
-	m_idle->start(m_loop, [](uv_idle_t* handle) 
+	m_idle->start(m_loop, [](uv_timer_t* handle)
 	{
-		KCPSocket* s = (KCPSocket*)handle->data;
-		s->idleLogic();
-	}, this);
+		KCPSocket* svr = (KCPSocket*)handle->data;
+		svr->idleLogic();
+	}, 1, 1, this);
 }
 
 void KCPSocket::stopIdle()

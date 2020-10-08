@@ -247,10 +247,10 @@ void P2PPeer::run()
 
 	fc_free(turnAddr);
 
-	m_idle.start(m_loop.ptr(), [](uv_idle_t* handle)
+	m_idle.start(m_loop.ptr(), [](uv_timer_t* handle)
 	{
 		((P2PPeer*)handle->data)->onIdleRun();
-	}, this);
+	}, 1, 1, this);
 
 	m_timer.start(m_loop.ptr(), [](uv_timer_t* handle)
 	{
@@ -278,8 +278,6 @@ void P2PPeer::onIdleRun()
 		m_timer.stop();
 		m_idle.stop();
 	}
-
-	ThreadSleep(1);
 }
 
 void P2PPeer::onTimerRun()

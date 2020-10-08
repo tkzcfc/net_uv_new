@@ -136,7 +136,7 @@ int main(int argc, const char*argv[])
 	while (!gServerStop)
 	{
 		svr->updateFrame();
-		ThreadSleep(1);
+		::Sleep(1);
 	}
 
 	delete svr;

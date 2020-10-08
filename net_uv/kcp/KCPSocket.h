@@ -111,7 +111,7 @@ protected:
 	State m_kcpState;
 
 	uv_udp_t* m_udp;
-	UVIdle* m_idle;
+	UVTimer* m_idle;
 	struct sockaddr* m_socketAddr;
 	char* m_recvBuf;
 

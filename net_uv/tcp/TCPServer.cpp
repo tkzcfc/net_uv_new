@@ -371,7 +371,6 @@ void TCPServer::onIdleRun()
 	default:
 		break;
 	}
-	ThreadSleep(1);
 }
 
 NS_NET_UV_END

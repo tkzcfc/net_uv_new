@@ -47,7 +47,7 @@ protected:
 	TurnState m_state;
 
 	UVLoop m_loop;
-	UVIdle m_idle;
+	UVTimer m_idle;
 	Thread m_thread;
 
 	struct PeerData

@@ -107,7 +107,7 @@ protected:
 	Thread m_thread;
 
 	UVLoop m_loop;
-	UVIdle m_idle;
+	UVTimer m_idle;
 	UVTimer m_timer;
 
 	std::string m_turnIP;

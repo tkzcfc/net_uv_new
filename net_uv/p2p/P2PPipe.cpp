@@ -428,8 +428,11 @@ void P2PPipe::createKcp(uint64_t key, uint32_t conv, uint32_t tag)
 		// 第三个参数 interval为内部处理时钟，默认设置为 10ms
 		// 第四个参数 resend为快速重传指标，设置为2
 		// 第五个参数 为是否禁用常规流控，这里禁止
+		// 延迟更小占用带宽更多
 		ikcp_nodelay(kcp, 1, 10, 2, 1);
-		//ikcp_nodelay(m_kcp, 1, 5, 1, 1); // 设置成1次ACK跨越直接重传, 这样反应速度会更快. 内部时钟5毫秒.
+		
+		// 带宽浪费少,最大速度更大
+		//ikcp_nodelay(kcp, 1, 10, 0, 0);
 
 		it->second.kcp = kcp;
 

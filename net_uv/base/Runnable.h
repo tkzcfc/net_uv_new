@@ -52,7 +52,7 @@ protected:
 	std::queue<NetThreadMsg> m_msgDispatchQue;
 
 	UVLoop m_loop;
-	UVIdle m_idle;
+	UVTimer m_idle;
 	UVTimer m_updateTimer;
 
 	Thread m_thread;

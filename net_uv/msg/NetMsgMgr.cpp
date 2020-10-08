@@ -183,6 +183,8 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, char* data, uint32_t len)
 	char* p = net_uv_encode(data, len, NetMsgHeadLen, encodelen);
 	if (p == NULL)
 	{
+		printf("len = %d\n", len);
+		printf("\n\n{%s}\n\n", std::string(data, len).c_str());
 		assert(0);
 		return;
 	}

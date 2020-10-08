@@ -43,32 +43,6 @@ private:
 	std::list<uv_buf_t> m_freeReadBufList;
 };
 
-
-class UVIdle
-{
-public:
-
-	UVIdle();
-
-	~UVIdle();
-
-	uv_idle_t* ptr();
-	
-	void start(uv_loop_t* loop, uv_idle_cb cb, void* data);
-
-	void stop();
-
-	void close(uv_close_cb cb);
-
-	bool isRunning();
-
-private:
-
-	uv_idle_t m_idle;
-
-	bool m_start;
-};
-
 class UVTimer
 {
 public:
