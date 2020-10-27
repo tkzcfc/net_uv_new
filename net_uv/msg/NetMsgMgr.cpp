@@ -63,9 +63,12 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 			pMsg->type = NetMsgHead::PONG;
 			m_sendCall(this, sessionID, (char*)pMsg, NetMsgHeadLen);
 			fc_free(pMsg);
+			recvBuf->pop(NULL, sizeof(NetMsgHead));
 		}break;
 		case NetMsgHead::PONG:
-		{}break;
+		{
+			recvBuf->pop(NULL, sizeof(NetMsgHead));
+		}break;
 		case NetMsgHead::MSG:
 		{
 			//长度大于最大包长或长度小于等于零，不合法客户端
@@ -288,7 +291,7 @@ void NetMsgMgr::createSessionInfo(uint32_t sessionID)
 	info->lastRecvTime = m_curUpdateTime;
 	info->loseCount = 0;
 	info->buf = (Buffer*)fc_malloc(sizeof(Buffer));
-	new(info->buf) Buffer(NET_UV_WRITE_MAX_LEN * 4);
+	new(info->buf) Buffer(NET_UV_WRITE_MAX_LEN * 10);
 
 	m_sessionInfoMap.insert(std::make_pair(sessionID, info));
 	m_sessionInfoVec.push_back(info);

@@ -3,6 +3,8 @@
 
 NS_NET_UV_BEGIN
 
+#define FREE_BLOCK(b) do{ fc_free(b->data); fc_free(b); }while(0)
+
 class Buffer
 {
 	struct block
@@ -32,8 +34,7 @@ public:
 	virtual ~Buffer()
 	{
 		clear();
-		fc_free(m_headBlock->data);
-		fc_free(m_headBlock);
+		FREE_BLOCK(m_headBlock);
 	}
 
 	inline uint32_t getDataLength()
@@ -56,14 +57,67 @@ public:
 			}
 			uint32_t sub = m_blockSize - m_tailBlock->dataLen;
 			uint32_t copylen = (sub > dataLen) ? dataLen : sub;
-			
+
 			memcpy(m_tailBlock->data + m_tailBlock->dataLen, curData, copylen);
-			
+
 			m_tailBlock->dataLen += copylen;
 			m_curDataLength += copylen;
 			curData = curData + copylen;
 			dataLen -= copylen;
 		}
+	}
+
+	bool pop(char* pOutData, uint32_t len)
+	{
+		if (len <= 0 || m_curDataLength < len)
+			return false;
+
+		uint32_t curIndex = 0;
+		do
+		{
+			if (len - curIndex >= m_headBlock->dataLen)
+			{
+				if (pOutData)
+				{
+					memcpy(pOutData + curIndex, m_headBlock->data, m_headBlock->dataLen);
+				}
+				curIndex += m_headBlock->dataLen;
+
+				if (m_headBlock->next == NULL)
+				{
+					m_headBlock->dataLen = 0;
+				}
+				else
+				{
+					auto tmp = m_headBlock;
+					m_headBlock = m_headBlock->next;
+					FREE_BLOCK(tmp);
+				}
+				if (curIndex >= len)
+					break;
+			}
+			else
+			{
+				assert(curIndex < len);
+				uint32_t diff = len - curIndex;
+				if (pOutData)
+				{
+					memcpy(pOutData + curIndex, m_headBlock->data, diff);
+				}
+				m_headBlock->dataLen = m_headBlock->dataLen - diff;
+
+				char* buf = (char*)fc_malloc(m_blockSize);
+				memcpy(buf, m_headBlock->data + diff, m_headBlock->dataLen);
+
+				fc_free(m_headBlock->data);
+				m_headBlock->data = buf;
+				break;
+			}
+		} while (m_headBlock);
+
+		m_curDataLength -= len;
+
+		return true;
 	}
 
 	bool get(char* pOutData)
@@ -89,8 +143,7 @@ public:
 		{
 			block* pre = m_tailBlock->pre;
 			pre->next = NULL;
-			fc_free(m_tailBlock->data);
-			fc_free(m_tailBlock);
+			FREE_BLOCK(m_tailBlock);
 			m_tailBlock = pre;
 		}
 		m_headBlock->dataLen = 0;
@@ -114,5 +167,6 @@ protected:
 		return p;
 	}
 };
+
 
 NS_NET_UV_END
