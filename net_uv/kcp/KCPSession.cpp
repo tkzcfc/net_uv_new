@@ -8,16 +8,6 @@ KCPSession* KCPSession::createSession(SessionManager* sessionManager, KCPSocket*
 	KCPSession* session = (KCPSession*)fc_malloc(sizeof(KCPSession));
 	new(session)KCPSession(sessionManager);
 
-	if (session == NULL)
-	{
-		if (socket)
-		{
-			socket->~KCPSocket();
-			fc_free(socket);
-		}
-		return NULL;
-	}
-
 	if (session->init(socket))
 	{
 		return session;

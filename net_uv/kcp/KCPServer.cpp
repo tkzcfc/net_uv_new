@@ -179,7 +179,7 @@ void KCPServer::onNewConnect(Socket* socket)
 		KCPSession* session = KCPSession::createSession(this, (KCPSocket*)socket);
 		if (session == NULL)
 		{
-			NET_UV_LOG(NET_UV_L_ERROR, "The server failed to create a new session. It may be out of memory");
+			NET_UV_LOG(NET_UV_L_ERROR, "The server failed to create a new session.");
 		}
 		else
 		{

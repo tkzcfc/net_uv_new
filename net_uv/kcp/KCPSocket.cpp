@@ -8,6 +8,7 @@ KCPSocket::KCPSocket(uv_loop_t* loop)
 	, m_udp(NULL)
 	, m_socketMng(NULL)
 	, m_kcpState(State::CLOSED)
+	, m_stateTimeStamp(0U)
 	, m_newConnectionCall(nullptr)
 	, m_connectFilterCall(nullptr)
 	, m_conv(0)
@@ -15,9 +16,6 @@ KCPSocket::KCPSocket(uv_loop_t* loop)
 	, m_kcp(NULL)
 	, m_recvBuf(NULL)
 	, m_soType(KCPSOType::CLI_SO)
-	, m_autoSend_Data(NULL)
-	, m_autoSend_DataLen(0)
-	, m_autoSendCount(-1)
 	, m_idle(NULL)
 	, m_idleUpdateTime(0U)
 	, m_lastKcpRecvTime(0U)
@@ -29,25 +27,10 @@ KCPSocket::KCPSocket(uv_loop_t* loop)
 
 KCPSocket::~KCPSocket()
 {
-	cancelCurAutoSend();
-
 	FC_SAFE_FREE(m_socketAddr);
 	FC_SAFE_FREE(m_recvBuf);
 
-	if (m_idle)
-	{
-		m_idle->~UVTimer();
-		fc_free(m_idle);
-		m_idle = NULL;
-	}
-
-	this->releaseKcp();
-
-	if (!m_weakRefTag && m_udp)
-	{
-		net_closeHandle((uv_handle_t*)m_udp, net_closehandle_defaultcallback);
-		m_udp = NULL;
-	}
+	assert(m_udp == NULL);
 
 	if (m_socketMng != NULL && !m_weakRefTag)
 	{
@@ -55,7 +38,6 @@ KCPSocket::~KCPSocket()
 		fc_free(m_socketMng);
 		m_socketMng = NULL;
 	}
-	stopIdle();
 }
 
 bool KCPSocket::bind(const char* ip, uint32_t port)
@@ -120,17 +102,8 @@ bool KCPSocket::bind6(const char* ip, uint32_t port)
 
 bool KCPSocket::listen(int32_t count)
 {
-	if (m_socketMng)
-	{
-		assert(0);
-		return true;
-	}
-
-	if (m_udp == NULL)
-	{
-		assert(0);
-		return false;
-	}
+	assert(m_socketMng == NULL);
+	assert(m_udp != NULL);
 
 	int32_t r = uv_udp_recv_start(m_udp, uv_on_alloc_buffer, uv_on_after_read);
 	if (r != 0)
@@ -139,7 +112,7 @@ bool KCPSocket::listen(int32_t count)
 		return false;
 	}
 
-	m_kcpState = State::LISTEN;
+	this->changeState(State::LISTEN);
 
 	m_socketMng = (KCPSocketManager*)fc_malloc(sizeof(KCPSocketManager));
 	new (m_socketMng) KCPSocketManager(m_loop, this);
@@ -199,11 +172,9 @@ bool KCPSocket::connect(const char* ip, uint32_t port)
 		return false;
 	}
 
-	m_kcpState = State::SYN_SENT;
-
-	m_randValue = std::rand() % 100 + 100;
-	std::string str = kcp_making_syn(m_randValue);
-	setAutoSendData(str.c_str(), str.size());
+	changeState(State::SYN_SENT);
+	m_randValue = std::rand() % 1000 + std::rand() % 1000 + 1000;
+	this->udpSendStr(kcp_making_syn(m_randValue));
 
 	startIdle();
 
@@ -222,11 +193,10 @@ bool KCPSocket::send(char* data, int32_t len)
 
 void KCPSocket::disconnect()
 {
-	m_lastKcpRecvTime = 0;
-
 	if (m_kcpState == State::LISTEN)
 	{
-		m_kcpState = State::STOP_LISTEN;
+		this->changeState(State::STOP_LISTEN);
+		m_socketMng->disconnectAll();
 		startIdle();
 		return;
 	}
@@ -237,19 +207,26 @@ void KCPSocket::disconnect()
 
 	if (getConv() != 0)
 	{
-		std::string str = kcp_making_fin(getConv());
-		setAutoSendData(str.c_str(), str.size());
-
-		if (m_soType == KCPSOType::CLI_SO)
+		// socket connected
+		if(m_kcpState == State::ESTABLISHED)
 		{
-			m_kcpState = (m_kcpState == State::ESTABLISHED) ? State::FIN_WAIT : State::CLOSED;
+			this->udpSendStr(kcp_making_fin(getConv()));
+			if (m_soType == KCPSOType::CLI_SO)
+				this->changeState(State::FIN_WAIT);
+			else
+				this->changeState(State::CLOSE_WAIT);
 		}
-		else
+		// sever socket
+		else if (m_kcpState == State::SYN_RECV)
 		{
-			m_kcpState = (m_kcpState == State::ESTABLISHED) ? State::CLOSE_WAIT : State::CLOSED;
+			this->changeState(State::CLOSED);
+		}
+		// client socket
+		else if (m_kcpState == State::SYN_SENT)
+		{
+			this->changeState(State::CLOSED);
 		}
 	}
-	this->releaseKcp();
 }
 
 bool KCPSocket::accept(const struct sockaddr* addr, uint32_t synValue)
@@ -288,74 +265,97 @@ void KCPSocket::svr_connect(struct sockaddr* addr, IUINT32 conv, uint32_t synVal
 {
 	this->setSocketAddr(addr);
 	this->setConv(conv);
-
-	m_kcpState = State::SYN_RECV;
-
-	std::string str = kcp_making_syn_and_ack(synValue + 1, conv);
-	setAutoSendData(str.c_str(), str.size());
-
-	startIdle();
+	this->changeState(State::SYN_RECV);
+	this->m_randValue = synValue + 1;
+	this->udpSendStr(kcp_making_syn_and_ack(m_randValue, conv));
+	this->startIdle();
 }
 
 void KCPSocket::idleLogic()
 {
-	if (m_kcp)
+	if (m_kcp && m_kcpState == State::ESTABLISHED)
 	{
 		ikcp_update(m_kcp, (IUINT32)(uv_now(m_loop) & 0xfffffffful));
 	}
 
-	if (m_kcpState == State::STOP_LISTEN)
-	{
-		if (uv_now(m_loop) - m_idleUpdateTime > 500)
-		{
-			m_idleUpdateTime = uv_now(m_loop);
-			if (m_socketMng->count() <= 0)
-			{
-				shutdownSocket();
-			}
-			else
-			{
-				m_socketMng->disconnectAll();
-			}
-		}
-		return;
-	}
-
-	if (uv_now(m_loop) - m_idleUpdateTime > 200)
+	if (uv_now(m_loop) - m_idleUpdateTime > 200ull)
 	{
 		m_idleUpdateTime = uv_now(m_loop);
+		checkLogic();
+	}
+}
 
-		if (m_lastKcpRecvTime > 0 && uv_now(m_loop) - m_lastKcpRecvTime > 6000U)
+void KCPSocket::checkLogic()
+{
+	switch (m_kcpState)
+	{
+	case State::LISTEN:
+		break;
+	case State::STOP_LISTEN:
+	{
+		if (m_socketMng->count() <= 0)
+			shutdownSocket();
+		else
+			m_socketMng->disconnectAll();
+	}
+	break;
+	case State::SYN_SENT:
+	{
+		// connect timeout
+		if (uv_now(m_loop) - m_stateTimeStamp > 3000)
+			this->connectResult(2);
+		else
+			this->udpSendStr(kcp_making_syn(m_randValue));
+	}
+	break;
+	case State::SYN_RECV:
+	{
+		if (uv_now(m_loop) - m_stateTimeStamp > 5000)
+			this->acceptFailed();
+		else
+			this->udpSendStr(kcp_making_syn_and_ack(m_randValue, this->getConv()));
+	}
+	break;
+	case State::ESTABLISHED:
+	{
+		if (m_soType == KCPSOType::CLI_SO && uv_now(m_loop) - m_stateTimeStamp < 2000)
+			this->udpSendStr(kcp_making_ack(this->getConv() + 1));
+	}
+	break;
+	case State::FIN_WAIT:
+	case State::CLOSE_WAIT:
+		if (uv_now(m_loop) - m_stateTimeStamp > 1000)
+			this->shutdownSocket();
+		else
+			this->udpSendStr(kcp_making_fin(getConv()));
+		break;
+	default:
+		this->shutdownSocket();
+		break;
+	}
+
+	if (m_kcpState == State::ESTABLISHED && uv_now(m_loop) - m_lastKcpRecvTime > 6000U)
+	{
+		m_heartbeatLoseCount++;
+		m_lastKcpRecvTime = uv_now(m_loop);
+
+		// If there is no message communication more than one minute
+		if (m_heartbeatLoseCount > 9)
 		{
-			m_heartbeatLoseCount++;
-
-			// If there is no message communication more than one minute
-			if (m_heartbeatLoseCount > 9)
-			{
-				this->disconnect();
-				return;
-			}
-
-			if (m_soType == CLI_SO)
-			{
-				if (m_heartbeatLoseCount > 2)
-				{
-					std::string str = kcp_making_heart_packet();
-					this->udpSend(str.c_str(), str.size());
-				}
-			}
-			else
-			{
-				if (m_heartbeatLoseCount > 5)
-				{
-					std::string str = kcp_making_heart_packet();
-					this->udpSend(str.c_str(), str.size());
-				}
-			}
-			m_lastKcpRecvTime = uv_now(m_loop);
+			this->disconnect();
+			return;
 		}
 
-		autoSendLogic();
+		if (m_soType == CLI_SO)
+		{
+			if (m_heartbeatLoseCount >= 2)
+				this->udpSendStr(kcp_making_heart_packet());
+		}
+		else
+		{
+			if (m_heartbeatLoseCount >= 5)
+				this->udpSendStr(kcp_making_heart_packet());
+		}
 	}
 }
 
@@ -367,6 +367,7 @@ void KCPSocket::startIdle()
 		new (m_idle) UVTimer();
 	}
 
+	m_idleUpdateTime = uv_now(m_loop);
 	m_idle->start(m_loop, [](uv_timer_t* handle)
 	{
 		KCPSocket* svr = (KCPSocket*)handle->data;
@@ -389,57 +390,54 @@ void KCPSocket::stopIdle()
 	m_idle = NULL;
 }
 
-void KCPSocket::tryCloseSocket(uv_handle_t* handle)
+void KCPSocket::shutdownSocket()
 {
-	if (handle && handle == (uv_handle_t*)m_udp)
-	{
-		fc_free(handle);
-		m_udp = NULL;
-	}
+	this->releaseKcp();
+	this->stopIdle();
+	this->setConv(0);
+	m_randValue = 0;
 	
-	if (m_udp != NULL)
-		return;
+	if (m_weakRefTag)
+	{
+		m_udp = NULL;
+		if (m_kcpState == State::CLOSE_WAIT && this->m_closeCall != nullptr)
+			this->m_closeCall(this);
 
-	if (m_kcpState == State::FIN_WAIT || m_kcpState == State::CLOSE_WAIT || m_kcpState == State::STOP_LISTEN)
+		this->changeState(State::CLOSED);
+
+		auto mng = m_socketMng;
+		m_socketMng = NULL;
+		mng->remove(this);
+	}
+	else
+	{
+		if (m_udp)
+		{
+			uv_udp_recv_stop(m_udp);
+			net_closeHandle((uv_handle_t*)m_udp, [](uv_handle_t* handle)
+			{
+				((KCPSocket*)handle->data)->onCloseSocketFinished(handle);
+			});
+		}
+		else
+		{
+			this->changeState(State::CLOSED);
+		}
+	}
+}
+
+void KCPSocket::onCloseSocketFinished(uv_handle_t* handle)
+{
+	fc_free(handle);
+	m_udp = NULL;
+	if (m_kcpState == State::FIN_WAIT || m_kcpState == State::STOP_LISTEN)
 	{
 		if (this->m_closeCall != nullptr)
 		{
 			this->m_closeCall(this);
 		}
 	}
-
-	if (m_weakRefTag)
-	{
-		auto mng = m_socketMng;
-		m_socketMng = NULL;
-		mng->remove(this);
-	}
-}
-
-void KCPSocket::shutdownSocket()
-{
-	cancelCurAutoSend();
-	releaseKcp();
-	stopIdle();
-	
-	if (!m_weakRefTag)
-	{
-		if (m_udp)
-		{
-			uv_udp_recv_stop(m_udp);
-
-			net_closeHandle((uv_handle_t*)m_udp, [](uv_handle_t* handle)
-			{
-				((KCPSocket*)handle->data)->tryCloseSocket(handle);
-			});
-		}
-	}
-	else
-	{
-		m_udp = NULL;
-	}
-
-	this->tryCloseSocket(NULL);
+	this->changeState(State::CLOSED);
 }
 
 void KCPSocket::setSocketAddr(struct sockaddr* addr)
@@ -477,7 +475,6 @@ void KCPSocket::kcpInput(const char* data, long size)
 {
 	if (size <= 0 || m_kcp == NULL)
 		return;
-	resetCheckTimer();
 
 	ikcp_input(m_kcp, data, size);
 
@@ -526,149 +523,99 @@ void KCPSocket::releaseKcp()
 		ikcp_release(m_kcp);
 		m_kcp = NULL;
 	}
-	this->setConv(0);
 }
 
 void KCPSocket::onUdpRead(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, const struct sockaddr* addr, uint32_t flags)
 {
 	if (m_soType == KCPSOType::SVR_SO)
 	{
-		if (m_kcpState == KCPSocket::State::LISTEN)
+		if (m_kcpState == State::STOP_LISTEN) return;
+		if (m_kcpState == State::LISTEN)
 		{
 			auto containSO = m_socketMng->getSocketBySockAddr(addr);
-
 			if (kcp_is_syn(buf->base, nread))
 			{
 				if (containSO == NULL && m_connectFilterCall(addr))
 				{
 					uint32_t synValue = kcp_grab_syn_value(buf->base, nread);
 					if (synValue > 0)
-					{
 						this->accept(addr, synValue);
-					}
 				}
 			}
 			else
 			{
 				if (containSO)
-				{
 					containSO->onUdpRead(handle, nread, buf, addr, flags);
-				}
 			}
+			return;
 		}
-		else if (m_kcpState == State::STOP_LISTEN)
-		{}
-		else
+	}
+	bool isKcp = false;
+	if (kcp_is_syn(buf->base, nread)) {}
+	else if (kcp_is_syn_and_ack(buf->base, nread)) 
+	{
+		if (m_soType == KCPSOType::CLI_SO && m_kcpState == State::SYN_SENT)
 		{
-			if (kcp_is_ack(buf->base, nread))
+			uint32_t value, conv;
+			if (kcp_grab_syn_and_ack_value(buf->base, nread, &value, &conv) && value == m_randValue + 1)
 			{
-				if (m_kcpState == KCPSocket::State::SYN_RECV)
-				{
-					uint32_t conv = kcp_grab_ack_value(buf->base, nread);
-					if (this->getConv() == conv - 1)
-					{
-						m_kcpState = KCPSocket::State::ESTABLISHED;
-						this->initKcp(this->getConv());
-						this->cancelCurAutoSend();
-						m_socketMng->online(this);
-						m_socketMng->getOwner()->m_newConnectionCall(this);
-						this->resetCheckTimer();
-					}
-					else
-					{
-						this->disconnect();
-					}
-				}
-			}
-			else if (kcp_is_fin(buf->base, nread))
-			{
-				if (kcp_grab_fin_value(buf->base, nread) == this->getConv())
-				{
-					this->disconnect();
-				}
-				else
-				{
-					if (m_kcpState == KCPSocket::State::CLOSE_WAIT)
-					{
-						shutdownSocket();
-					}
-				}
-			}
-			else if (kcp_is_heart_packet(buf->base, nread))
-			{
-				this->resetCheckTimer();
-				std::string str = kcp_making_heart_back_packet();
-				this->udpSend(str.c_str(), str.size());
-			}
-			else if (kcp_is_heart_back_packet(buf->base, nread))
-			{
+				this->initKcp(conv);
+				this->changeState(State::ESTABLISHED);
+				this->udpSendStr(kcp_making_ack(conv + 1));
+				this->connectResult(1);
 				this->resetCheckTimer();
 			}
 			else
 			{
-				if (m_kcpState == KCPSocket::State::ESTABLISHED)
-				{
-					kcpInput(buf->base, nread);
-				}
+				this->connectResult(0);
 			}
+		}
+	}
+	else if (kcp_is_ack(buf->base, nread)) 
+	{
+		if (m_soType == KCPSOType::SVR_SO && m_kcpState == State::SYN_RECV)
+		{
+			uint32_t conv = kcp_grab_ack_value(buf->base, nread);
+			if (this->getConv() == conv - 1)
+			{
+				this->changeState(State::ESTABLISHED);
+				this->initKcp(this->getConv());
+				m_socketMng->online(this);
+				m_socketMng->getOwner()->m_newConnectionCall(this);
+				this->resetCheckTimer();
+			}
+			else
+			{
+				this->acceptFailed();
+			}
+		}
+	}
+	else if (kcp_is_fin(buf->base, nread)) 
+	{
+		if (kcp_grab_fin_value(buf->base, nread) == this->getConv())
+		{
+			if (m_kcpState == State::ESTABLISHED)
+				this->disconnect();
+			else if (m_kcpState == State::FIN_WAIT)
+				this->shutdownSocket();
+			else if (m_kcpState == State::CLOSE_WAIT)
+				this->shutdownSocket();
 		}
 	}
 	else
 	{
-		if (kcp_is_syn_and_ack(buf->base, nread))
+		if (m_kcpState == State::ESTABLISHED)
 		{
-			if (m_kcpState == KCPSocket::State::SYN_SENT)
+			this->resetCheckTimer();
+			if (kcp_is_heart_packet(buf->base, nread))
 			{
-				uint32_t value, conv;
-				if (kcp_grab_syn_and_ack_value(buf->base, nread, &value, &conv) && value == m_randValue + 1)
-				{
-					m_kcpState = KCPSocket::State::ESTABLISHED;
-					std::string str = kcp_making_ack(conv + 1);
-
-					this->setAutoSendData(str.c_str(), str.size());
-					this->initKcp(conv);
-					this->connectResult(1);
-					this->resetCheckTimer();
-				}
-				else
-				{
-					this->connectResult(0);
-				}
+				this->udpSendStr(kcp_making_heart_back_packet());
 			}
-		}
-		else if (kcp_is_fin(buf->base, nread))
-		{
-			if (kcp_grab_fin_value(buf->base, nread) == this->getConv())
-			{
-				this->disconnect();
-			}
+			else if (kcp_is_heart_back_packet(buf->base, nread)) {}
 			else
 			{
-				if (m_kcpState == State::SYN_SENT)
-				{
-					this->connectResult(0);
-				}
-				else if(m_kcpState == State::CLOSE_WAIT)
-				{
-					shutdownSocket();
-				}
-			}
-		}
-		else if (kcp_is_heart_packet(buf->base, nread))
-		{
-			this->resetCheckTimer();
-			std::string str = kcp_making_heart_back_packet();
-			this->udpSend(str.c_str(), str.size());
-		}
-		else if (kcp_is_heart_back_packet(buf->base, nread))
-		{
-			this->resetCheckTimer();
-		}
-		else
-		{
-			if (m_kcpState == State::ESTABLISHED)
-			{
-				kcpInput(buf->base, nread);
+				isKcp = true;
+				this->kcpInput(buf->base, nread);
 			}
 		}
 	}
@@ -677,80 +624,19 @@ void KCPSocket::onUdpRead(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, 
 void KCPSocket::connectResult(int32_t status)
 {
 	if (m_connectCall)
-	{
 		m_connectCall(this, status);
-	}
-	if (status == 2)
+
+	if (status != 1)
 	{
-		shutdownSocket();
+		this->changeState(State::CLOSED);
+		this->shutdownSocket();
 	}
 }
 
 void KCPSocket::acceptFailed()
 {
+	this->changeState(State::CLOSED);
 	this->shutdownSocket();
-}
-
-void KCPSocket::setAutoSendData(const char* data, uint32_t len)
-{
-	cancelCurAutoSend();
-
-	if (data == NULL || len <= 0)
-		return;
-
-	m_autoSend_Data = (char*)fc_malloc(len);
-	memcpy(m_autoSend_Data, data, len);
-	m_autoSend_DataLen = len;
-	m_autoSendCount = 5;
-
-	this->udpSend(m_autoSend_Data, m_autoSend_DataLen);
-}
-
-void KCPSocket::cancelCurAutoSend()
-{
-	FC_SAFE_FREE(m_autoSend_Data);
-	m_autoSend_DataLen = 0;
-	m_autoSendCount = -1;
-}
-
-void KCPSocket::autoSendLogic()
-{
-	if (m_autoSendCount < 0)
-	{
-		return;
-	}
-	else if (m_autoSendCount == 0)
-	{
-		switch (m_kcpState)
-		{
-		case State::LISTEN:
-			break;
-		case State::SYN_SENT:
-			// timeout
-			this->connectResult(2);
-			break;
-		case State::SYN_RECV:
-			this->acceptFailed();
-			break;
-		case State::ESTABLISHED:
-			break;
-		case State::FIN_WAIT:
-		case State::CLOSE_WAIT:
-		case State::CLOSED:
-			this->shutdownSocket();
-			break;
-		default:
-			break;
-		}
-	}
-	else
-	{
-		if (m_autoSend_Data)
-		{
-			this->udpSend(m_autoSend_Data, m_autoSend_DataLen);
-		}
-	}
-	m_autoSendCount--;
 }
 
 void KCPSocket::resetCheckTimer()
@@ -759,6 +645,11 @@ void KCPSocket::resetCheckTimer()
 	m_heartbeatLoseCount = 0;
 }
 
+void KCPSocket::changeState(State newState)
+{
+	m_kcpState = newState;
+	m_stateTimeStamp = uv_now(m_loop);
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

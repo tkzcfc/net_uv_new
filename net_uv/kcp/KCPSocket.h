@@ -39,53 +39,6 @@ public:
 	inline void setConnectFilterCallback(const KCPSocketConnectFilterCall& call);
 
 protected:
-	inline uv_udp_t* getUdp();
-	
-	inline void setWeakRefSocketManager(KCPSocketManager* manager);
-
-	void svr_connect(struct sockaddr* addr, IUINT32 conv, uint32_t synValue);
-
-	void shutdownSocket();
-
-	void setSocketAddr(struct sockaddr* addr);
-
-	inline struct sockaddr* getSocketAddr();
-
-	void udpSend(const char* data, int32_t len);
-
-	void kcpInput(const char* data, long size);
-
-	void initKcp(IUINT32 conv);
-
-	void releaseKcp();
-
-	void onUdpRead(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, const struct sockaddr* addr, uint32_t flags);
-
-	void connectResult(int32_t status);
-	
-	inline void setConv(IUINT32 conv);
-
-	inline IUINT32 getConv();
-
-	void startIdle();
-
-	inline void stopIdle();
-
-	void idleLogic();
-
-	void tryCloseSocket(uv_handle_t* handle);
-
-	void acceptFailed();
-
-	void setAutoSendData(const char* data, uint32_t len);
-
-	void cancelCurAutoSend();
-
-	void autoSendLogic();
-
-	void resetCheckTimer();
-	
-protected:
 
 	enum class State
 	{
@@ -107,8 +60,57 @@ protected:
 		CLI_SO,
 	};
 
+protected:
+	inline uv_udp_t* getUdp();
+	
+	inline void setWeakRefSocketManager(KCPSocketManager* manager);
+
+	void svr_connect(struct sockaddr* addr, IUINT32 conv, uint32_t synValue);
+
+	void shutdownSocket();
+
+	void setSocketAddr(struct sockaddr* addr);
+
+	inline struct sockaddr* getSocketAddr();
+
+	inline void udpSendStr(const std::string& str);
+
+	void udpSend(const char* data, int32_t len);
+
+	void kcpInput(const char* data, long size);
+
+	void initKcp(IUINT32 conv);
+
+	void releaseKcp();
+
+	void onUdpRead(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, const struct sockaddr* addr, uint32_t flags);
+
+	void connectResult(int32_t status);
+	
+	inline void setConv(IUINT32 conv);
+
+	inline IUINT32 getConv();
+
+	void startIdle();
+
+	void stopIdle();
+
+	void idleLogic();
+
+	void checkLogic();
+
+	void onCloseSocketFinished(uv_handle_t* handle);
+
+	void acceptFailed();
+
+	void resetCheckTimer();
+
+	void changeState(State newState);
+	
+protected:
 	KCPSOType m_soType;
 	State m_kcpState;
+	uint64_t m_stateTimeStamp;
 
 	uv_udp_t* m_udp;
 	UVTimer* m_idle;
@@ -118,16 +120,11 @@ protected:
 	KCPSocketManager* m_socketMng;
 	bool m_weakRefTag;
 
-	char* m_autoSend_Data;
-	uint32_t m_autoSend_DataLen;
-	int32_t m_autoSendCount;
-
 	ikcpcb* m_kcp;
 	IUINT32 m_conv;
 	uint64_t m_idleUpdateTime;
 	uint64_t m_lastKcpRecvTime;
-
-	uint32_t m_heartbeatLoseCount;
+	uint16_t m_heartbeatLoseCount;
 
 	int32_t m_randValue;
 
@@ -157,6 +154,11 @@ void KCPSocket::setWeakRefSocketManager(KCPSocketManager* manager)
 struct sockaddr* KCPSocket::getSocketAddr()
 {
 	return m_socketAddr;
+}
+
+void KCPSocket::udpSendStr(const std::string& str)
+{
+	this->udpSend(str.c_str(), str.size());
 }
 
 void KCPSocket::setNewConnectionCallback(const KCPSocketNewConnectionCall& call)
