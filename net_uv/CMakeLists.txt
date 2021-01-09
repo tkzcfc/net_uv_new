@@ -26,8 +26,7 @@ set(NET_UV_BASE_SRC
   base/SessionManager.h
   base/Socket.cpp
   base/Socket.h
-  base/md5.cpp
-  base/md5.h
+  base/Thread.h
 )
 
 set(NET_UV_COMMON_SRC

@@ -13,6 +13,7 @@ UVLoop::UVLoop()
 
 UVLoop::~UVLoop()
 {
+	assert(m_loop.data == NULL);
 	clearLoopData();
 }
 
@@ -34,6 +35,7 @@ void UVLoop::stop()
 void UVLoop::close()
 {
 	uv_loop_close(&m_loop);
+	m_loop.data = NULL;
 	clearLoopData();
 }
 
