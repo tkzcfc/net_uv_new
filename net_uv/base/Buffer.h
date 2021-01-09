@@ -42,6 +42,11 @@ public:
 		return m_curDataLength;
 	}
 
+	inline uint32_t getBlockSize()
+	{
+		return m_blockSize;
+	}
+
 	void add(char* pData, uint32_t dataLen)
 	{
 		char* curData = pData;
