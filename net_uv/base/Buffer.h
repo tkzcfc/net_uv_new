@@ -47,6 +47,12 @@ public:
 		return m_blockSize;
 	}
 
+	inline uint32_t getHeadDataLen()
+	{
+		assert(m_headBlock != NULL);
+		return m_headBlock->dataLen;
+	}
+
 	void add(char* pData, uint32_t dataLen)
 	{
 		char* curData = pData;
