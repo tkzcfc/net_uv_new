@@ -7,12 +7,12 @@ KCPSocketManager::KCPSocketManager(uv_loop_t* loop, KCPSocket* owner)
 	: m_convSeed(10000)
 	, m_owner(owner)
 {
-	removeInvalid();
 }
 
 KCPSocketManager::~KCPSocketManager()
 {
 	m_owner = NULL;
+	removeInvalid();
 }
 
 void KCPSocketManager::push(KCPSocket* socket)
