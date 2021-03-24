@@ -287,9 +287,34 @@ void KCPSocket::idleLogic()
 
 void KCPSocket::checkLogic()
 {
+	if (m_kcpState == State::ESTABLISHED && uv_now(m_loop) - m_lastKcpRecvTime > 6000U)
+	{
+		m_heartbeatLoseCount++;
+		m_lastKcpRecvTime = uv_now(m_loop);
+
+		// If there is no message communication more than one minute
+		if (m_heartbeatLoseCount > 9)
+		{
+			this->disconnect();
+			return;
+		}
+
+		if (m_soType == CLI_SO)
+		{
+			if (m_heartbeatLoseCount >= 2)
+				this->udpSendStr(kcp_making_heart_packet());
+		}
+		else
+		{
+			if (m_heartbeatLoseCount >= 5)
+				this->udpSendStr(kcp_making_heart_packet());
+		}
+	}
+
 	switch (m_kcpState)
 	{
 	case State::LISTEN:
+		m_socketMng->removeInvalid();
 		break;
 	case State::STOP_LISTEN:
 	{
@@ -332,30 +357,6 @@ void KCPSocket::checkLogic()
 	default:
 		this->shutdownSocket();
 		break;
-	}
-
-	if (m_kcpState == State::ESTABLISHED && uv_now(m_loop) - m_lastKcpRecvTime > 6000U)
-	{
-		m_heartbeatLoseCount++;
-		m_lastKcpRecvTime = uv_now(m_loop);
-
-		// If there is no message communication more than one minute
-		if (m_heartbeatLoseCount > 9)
-		{
-			this->disconnect();
-			return;
-		}
-
-		if (m_soType == CLI_SO)
-		{
-			if (m_heartbeatLoseCount >= 2)
-				this->udpSendStr(kcp_making_heart_packet());
-		}
-		else
-		{
-			if (m_heartbeatLoseCount >= 5)
-				this->udpSendStr(kcp_making_heart_packet());
-		}
 	}
 }
 
