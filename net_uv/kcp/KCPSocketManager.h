@@ -28,8 +28,6 @@ public:
 
 	inline KCPSocket* getOwner();
 
-	void removeInvalid();
-
 private:
 
 	struct SOInfo
@@ -38,7 +36,6 @@ private:
 		bool isConnect;
 	};
 	std::vector<SOInfo> m_allSocket;
-	std::vector<KCPSocket*> m_removeSocket;
 
 	uint32_t m_convSeed;
 

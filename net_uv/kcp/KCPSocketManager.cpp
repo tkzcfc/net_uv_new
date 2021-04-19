@@ -6,13 +6,11 @@ NS_NET_UV_BEGIN
 KCPSocketManager::KCPSocketManager(uv_loop_t* loop, KCPSocket* owner)
 	: m_convSeed(10000)
 	, m_owner(owner)
-{
-}
+{}
 
 KCPSocketManager::~KCPSocketManager()
 {
 	m_owner = NULL;
-	removeInvalid();
 }
 
 void KCPSocketManager::push(KCPSocket* socket)
@@ -43,7 +41,8 @@ void KCPSocketManager::remove(KCPSocket* socket)
 		{
 			if (it->isConnect == false)
 			{
-				m_removeSocket.push_back(socket);
+				socket->~KCPSocket();
+				fc_free(socket);
 			}
 			m_allSocket.erase(it);
 			return;
@@ -81,20 +80,6 @@ KCPSocket* KCPSocketManager::getSocketBySockAddr(const struct sockaddr* addr)
 		}
 	}
 	return NULL;
-}
-
-void KCPSocketManager::removeInvalid()
-{
-	if (m_removeSocket.empty())
-		return;
-
-	for (auto socket : m_removeSocket)
-	{
-		socket->~KCPSocket();
-		fc_free(socket);
-	}
-
-	m_removeSocket.clear();
 }
 
 NS_NET_UV_END

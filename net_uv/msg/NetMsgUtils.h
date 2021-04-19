@@ -14,7 +14,7 @@ NS_NET_UV_BEGIN
 struct NetMsgHead
 {
 	uint32_t len;// 消息长度，不包括本结构体
-
+	uint32_t id; // 消息ID
 	enum NetMsgType
 	{
 		PING,

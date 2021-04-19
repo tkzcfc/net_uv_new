@@ -26,6 +26,8 @@ public:
 
 	std::string getHeader(const std::string& field) const;
 
+	std::string getParam(const std::string& key, const std::string& defaultValue) const;
+
 	void swap(HttpRequest& that);
 
 public:
@@ -50,12 +52,19 @@ public:
 
 	inline const std::map<std::string, std::string>& headers() const;
 
+	inline const std::map<std::string, std::string>& params() const;
+
+private:
+
+	void parseQuery();
+
 private:
 	Method m_method;
 	Version m_version;
 	std::string m_path;
 	std::string m_query;
 	std::map<std::string, std::string> m_headers;
+	std::map<std::string, std::string> m_params;
 };
 
 
@@ -92,11 +101,13 @@ const std::string& HttpRequest::path() const
 void HttpRequest::setQuery(const char* start, const char* end)
 {
 	m_query.assign(start, end);
+	parseQuery();
 }
 
 void HttpRequest::setQuery(const std::string& query)
 {
 	m_query = std::move(query);
+	parseQuery();
 }
 
 const std::string& HttpRequest::query() const
@@ -107,6 +118,11 @@ const std::string& HttpRequest::query() const
 const std::map<std::string, std::string>& HttpRequest::headers() const
 {
 	return m_headers;
+}
+
+const std::map<std::string, std::string>& HttpRequest::params() const
+{
+	return m_params;
 }
 
 NS_NET_UV_END

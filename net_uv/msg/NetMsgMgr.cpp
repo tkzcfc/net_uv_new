@@ -108,7 +108,7 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 
 				if (recvData != NULL && recvLen > 0)
 				{
-					m_onMsgCall(this, sessionID, recvData, recvLen);
+					m_onMsgCall(this, sessionID, h->id, recvData, recvLen);
 					fc_free(recvData);
 				}
 				else//数据不合法
@@ -162,7 +162,7 @@ void  NetMsgMgr::executeDisconnect(uint32_t sessionID)
 	m_closeSocketCall(this, sessionID);
 }
 
-void NetMsgMgr::sendMsg(uint32_t sessionID, char* data, uint32_t len)
+void NetMsgMgr::sendMsg(uint32_t sessionID, uint32_t msgID, char* data, uint32_t len)
 {
 	auto it = m_sessionInfoMap.find(sessionID);
 	if (it == m_sessionInfoMap.end())
@@ -191,6 +191,7 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, char* data, uint32_t len)
 	NetMsgHead* h = (NetMsgHead*)p;
 	h->len = encodelen;
 	h->type = NetMsgHead::NetMsgType::MSG;
+	h->id = msgID;
 
 	uint32_t sendlen = NetMsgHeadLen + encodelen;
 

@@ -10,7 +10,7 @@ NS_NET_UV_BEGIN
 
 class NetMsgMgr;
 using NetMgrSendBuffCallback = void(*)(NetMsgMgr*, uint32_t, char*, uint32_t len);
-using NetMgrOnMsgCallback = void(*)(NetMsgMgr*, uint32_t, char*, uint32_t len);
+using NetMgrOnMsgCallback = void(*)(NetMsgMgr*, uint32_t, uint32_t, char*, uint32_t len);
 using NetMgrCloseSocketCallback = void(*)(NetMsgMgr*, uint32_t);
 /*
  * 处理分包和心跳逻辑
@@ -27,7 +27,7 @@ public:
 
 	void onBuff(uint32_t sessionID, char* data, uint32_t len);
 
-	void sendMsg(uint32_t sessionID, char* data, uint32_t len);
+	void sendMsg(uint32_t sessionID, uint32_t msgID, char* data, uint32_t len);
 
 	void updateFrame();
 

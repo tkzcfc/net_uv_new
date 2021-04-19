@@ -2,6 +2,25 @@
 
 NS_NET_UV_BEGIN
 
+static void split(const std::string& str, const std::string& delimiter, std::vector<std::string>& result)
+{
+	std::string strTmp = str;
+	size_t cutAt;
+	while ((cutAt = strTmp.find_first_of(delimiter)) != strTmp.npos)
+	{
+		if (cutAt > 0)
+		{
+			result.push_back(strTmp.substr(0, cutAt));
+		}
+		strTmp = strTmp.substr(cutAt + 1);
+	}
+
+	if (!strTmp.empty())
+	{
+		result.push_back(strTmp);
+	}
+}
+
 HttpRequest::HttpRequest()
 	: m_method(kInvalid),
 	m_version(kUnknown)
@@ -92,6 +111,41 @@ std::string HttpRequest::getHeader(const std::string& field) const
 	return result;
 }
 
+std::string HttpRequest::getParam(const std::string& key, const std::string& defaultValue) const
+{
+	std::map<std::string, std::string>::const_iterator it = m_params.find(key);
+	if (it != m_params.end())
+	{
+		return it->second;
+	}
+	return defaultValue;
+}
+
+void HttpRequest::parseQuery()
+{
+	m_params.clear();
+
+	if (query().empty())
+		return;
+	
+	std::vector<std::string> arrParams;
+	split(query(), "&", arrParams);
+
+	if (arrParams.empty())
+		return;
+
+	std::vector<std::string> tmp;
+	for (auto& it : arrParams)
+	{
+		tmp.clear();
+		split(it, "=", tmp);
+		if (tmp.size() == 2)
+		{
+			m_params[tmp[0]] = tmp[1];
+		}
+	}
+}
+
 void HttpRequest::swap(HttpRequest& that)
 {
 	std::swap(m_method, that.m_method);
@@ -99,25 +153,7 @@ void HttpRequest::swap(HttpRequest& that)
 	m_path.swap(that.m_path);
 	m_query.swap(that.m_query);
 	m_headers.swap(that.m_headers);
-}
-
-template <class Fn>
-void split(const char* b, const char* e, char d, Fn fn)
-{
-	int i = 0;
-	int beg = 0;
-
-	while (e ? (b + i != e) : (b[i] != '\0')) {
-		if (b[i] == d) {
-			fn(&b[beg], &b[i]);
-			beg = i + 1;
-		}
-		i++;
-	}
-
-	if (i) {
-		fn(&b[beg], &b[i]);
-	}
+	m_params.swap(that.m_params);
 }
 
 NS_NET_UV_END
