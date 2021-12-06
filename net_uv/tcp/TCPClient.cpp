@@ -6,6 +6,7 @@ enum
 {
 	TCP_CLI_OP_CONNECT,			// connect
 	TCP_CLI_OP_SENDDATA,		// send data
+	TCP_CLI_OP_SEND_CLOSE,		// send & close
 	TCP_CLI_OP_DISCONNECT,		// disconnect
 	TCP_CLI_OP_SET_KEEP_ALIVE,	// set keep alive
 	TCP_CLI_OP_SET_NO_DELAY,	// set no delay
@@ -167,6 +168,19 @@ void TCPClient::send(uint32_t sessionId, char* data, uint32_t len)
 	pushOperation(TCP_CLI_OP_SENDDATA, pdata, len, sessionId);
 }
 
+void TCPClient::sendAndClose(uint32_t sessionID, char* data, uint32_t len)
+{
+	if (m_isStop)
+		return;
+
+	if (data == 0 || len <= 0)
+		return;
+
+	char* pdata = (char*)fc_malloc(len);
+	memcpy(pdata, data, len);
+	pushOperation(TCP_CLI_OP_SEND_CLOSE, pdata, len, sessionID);
+}
+
 /// TCPClient
 
 bool TCPClient::setSocketNoDelay(bool enable)
@@ -234,6 +248,18 @@ void TCPClient::executeOperation()
 			if (sessionData && !sessionData->removeTag)
 			{
 				sessionData->session->executeSend((char*)curOperation.operationData, curOperation.operationDataLen);
+			}
+			else
+			{
+				fc_free(curOperation.operationData);
+			}
+		}break;
+		case TCP_CLI_OP_SEND_CLOSE:		// send & close
+		{
+			auto sessionData = getClientSessionDataBySessionId(curOperation.sessionID);
+			if (sessionData && !sessionData->removeTag)
+			{
+				sessionData->session->executeSendAndClose((char*)curOperation.operationData, curOperation.operationDataLen);
 			}
 			else
 			{

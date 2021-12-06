@@ -1,9 +1,11 @@
 #include "HttpServer.h"
-#include "HttpContext.h"
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 
 NS_NET_UV_BEGIN
+
+
+const static size_t HTTP_WRITE_CHUNK_SIZE = 1400;
 
 HttpServer::HttpServer()
 	: m_svrCloseCallback(nullptr)
@@ -58,12 +60,12 @@ void HttpServer::updateFrame()
 
 uint32_t HttpServer::getActiveCount()
 {
-	return (uint32_t)m_contextMap.size();
+	return (uint32_t)m_requestMap.size();
 }
 
 void HttpServer::disconnectAllSession()
 {
-	for (auto &it : m_contextMap)
+	for (auto &it : m_requestMap)
 	{
 		it.first->disconnect();
 	}
@@ -76,59 +78,72 @@ uint32_t HttpServer::getListenPort()
 
 void HttpServer::onSvrNewConnectCallback(Server* svr, Session* session)
 {
-	HttpContext* context = (HttpContext*)fc_malloc(sizeof(HttpContext));
-	new(context) HttpContext();
-	m_contextMap[session] = context;
+	HttpRequest* request = (HttpRequest*)fc_malloc(sizeof(HttpRequest));
+	new(request) HttpRequest();
+	m_requestMap[session] = request;
 }
 
 void HttpServer::onSvrRecvCallback(Server* svr, Session* session, char* data, uint32_t len)
 {
 	m_curSession = session;
+	HttpRequest* request = m_requestMap[session];
 
-	HttpContext* context = m_contextMap[session];
-
-	if (!context->parseRequest(data, len))
-	{
-		static const char badRequest[] = "HTTP/1.1 400 Bad Request\r\n\r\n";
-		session->send((char*)badRequest, sizeof(badRequest));
-	}
-
-	if (context->gotAll())
-	{
-		const auto & req = context->request();
-
-		const std::string& connection = req.getHeader("Connection");
-		bool close = connection == "close" || (req.getVersion() == HttpRequest::kHttp10 && connection != "Keep-Alive");
-		
-		HttpResponse response;
-		response.setCloseConnection(close);
-		
-		m_svrCallback(req, &response);
-		
-		std::string res = response.toString();
-
-		session->send((char*)res.c_str(), res.size());
-		if (response.closeConnection())
-		{
-			session->disconnect();
-		}
-
-		context->reset();
-	}
-	else
+	if (!request->parse(data, (size_t)len))
 	{
 		session->disconnect();
+		m_curSession = NULL;
+		return;
 	}
 
-	m_curSession = nullptr;
+	if (request->ok())
+	{
+		const std::string& connection = request->getHeader("Connection");
+
+		bool close = connection == "close";
+		if(!close)
+		{
+			auto major = request->parser().http_major;
+			auto minor = request->parser().http_minor;
+			if (major == 1 && minor == 0 && connection != "Keep-Alive")
+			{
+				close = true;
+			}
+		}
+
+		HttpResponse response;
+		response.setCloseConnection(close);
+
+		m_svrCallback(*request, &response);
+
+		std::string output;
+		response.toString(output);
+		
+		auto count = output.size() / HTTP_WRITE_CHUNK_SIZE;
+		if (output.size() % HTTP_WRITE_CHUNK_SIZE != 0) count++;
+
+		size_t send_size = 0;
+		for (auto i = 0; i < count - 1; ++i)
+		{
+			session->send((char*)(output.c_str() + send_size), HTTP_WRITE_CHUNK_SIZE);
+			send_size += HTTP_WRITE_CHUNK_SIZE;
+		}
+
+		auto spare = output.size() - send_size;
+
+		if (response.closeConnection())
+			session->sendAndClose((char*)(output.c_str() + send_size), spare);
+		else
+			session->send((char*)(output.c_str() + send_size), spare);
+	}
+	m_curSession = NULL;
 }
 
 void HttpServer::onSvrDisconnectCallback(Server* svr, Session* session)
 {
-	HttpContext* context = m_contextMap[session];
-	context->~HttpContext();
-	fc_free(context);
-	m_contextMap.erase(session);
+	HttpRequest* request = m_requestMap[session];
+	request->~HttpRequest();
+	fc_free(request);
+	m_requestMap.erase(session);
 }
 
 NS_NET_UV_END

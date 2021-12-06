@@ -35,16 +35,14 @@ set(NET_UV_COMMON_SRC
 
 set(NET_UV_HTTP_SRC
     http/HttpCommon.h
-    http/HttpContext.cpp
-    http/HttpContext.h
-    http/HttpDetail.cpp
-    http/HttpDetail.h
     http/HttpRequest.cpp
     http/HttpRequest.h
     http/HttpResponse.cpp
     http/HttpResponse.h
     http/HttpServer.cpp
     http/HttpServer.h
+    http/http_parser.c
+    http/http_parser.h
 )
 
 set(NET_UV_KCP_SRC
@@ -110,7 +108,7 @@ set(NET_UV_SRC
     ${NET_UV_HTTP_SRC}
     ${NET_UV_KCP_SRC}
     ${NET_UV_P2P_SRC}
-	${NET_UV_TCP_SRC}
+	  ${NET_UV_TCP_SRC}
     ${NET_UV_UDP_SRC}
     ${NET_UV_NET_MSG_MGR_SRC}
 )

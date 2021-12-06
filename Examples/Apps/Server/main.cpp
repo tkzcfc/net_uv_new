@@ -48,39 +48,50 @@ int main(int argc, const char*argv[])
 		((Server*)mgr->getUserData())->send(sessionID, data, len);
 	});
 
-	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
+	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, uint32_t msgId, char* data, uint32_t len)
 	{
 		char* msg = (char*)fc_malloc(len + 1);
 		memcpy(msg, data, len);
 		msg[len] = '\0';
 
-		if (strcmp(msg, "control") == 0)
+		switch (msgId)
 		{
-			mgr->sendMsg(sessionID, (char*)"conrol client", strlen("conrol client"));
+		case 10000:
+		{
+			mgr->sendMsg(sessionID, msgId, (char*)"conrol client", strlen("conrol client"));
 			controlClient = sessionID;
-		}
-		else if (controlClient == sessionID && strcmp(msg, "close") == 0)
+		}break;
+		case 10001:
 		{
-			((Server*)mgr->getUserData())->stopServer();
-		}
-		else if (controlClient == sessionID && strcmp(msg, "print") == 0)
-		{
-			printMemInfo();
-		}
-		else if (controlClient == sessionID && strstr(msg, "send"))
-		{
-			char* sendbegin = strstr(msg, "send") + 4;
-			for (auto &it : allSession)
+			if (controlClient == sessionID)
 			{
-				if (it->getSessionID() != controlClient)
+				if (strcmp(msg, "close") == 0)
 				{
-					mgr->sendMsg(it->getSessionID(), sendbegin, strlen(sendbegin));
+					((Server*)mgr->getUserData())->stopServer();
+				}
+				else if (strcmp(msg, "print") == 0)
+				{
+					net_uv::printMemInfo();
+				}
+				else if (strstr(msg, "send"))
+				{
+					char* sendbegin = strstr(msg, "send") + 4;
+					for (auto &it : allSession)
+					{
+						if (it->getSessionID() != controlClient)
+						{
+							mgr->sendMsg(it->getSessionID(), msgId, sendbegin, strlen(sendbegin));
+						}
+					}
 				}
 			}
-		}
-		else
+			
+		}break;
+		default:
 		{
-			mgr->sendMsg(sessionID, data, len);
+			mgr->sendMsg(sessionID, msgId, data, len);
+		}
+			break;
 		}
 		fc_free(msg);
 
@@ -142,7 +153,7 @@ int main(int argc, const char*argv[])
 	delete svr;
 
 	printf("-----------------------------\n");
-	printMemInfo();
+	net_uv::printMemInfo();
 	printf("\n-----------------------------\n");
 
 	system("pause");

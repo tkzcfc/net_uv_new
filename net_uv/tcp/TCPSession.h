@@ -26,6 +26,8 @@ protected:
 
 	virtual void executeSend(char* data, uint32_t len) override;
 
+	virtual void executeSendAndClose(char* data, uint32_t len) override;
+
 	virtual void executeDisconnect() override;
 
 	virtual bool executeConnect(const char* ip, uint32_t port)override;

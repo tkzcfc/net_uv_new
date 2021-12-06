@@ -19,6 +19,11 @@ void Session::send(char* data, uint32_t len)
 	getSessionManager()->send(this->m_sessionID, data, len);
 }
 
+void Session::sendAndClose(char* data, uint32_t len)
+{
+	getSessionManager()->sendAndClose(this->m_sessionID, data, len);
+}
+
 void Session::disconnect()
 {
 	getSessionManager()->disconnect(this->m_sessionID);

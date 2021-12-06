@@ -7,7 +7,6 @@ NS_NET_UV_BEGIN
 
 class HttpRequest;
 class HttpResponse;
-class HttpContext;
 
 using HttpServerCallback = std::function<void(const HttpRequest&, HttpResponse*)>;
 using HttpServerCloseCallback = std::function<void()>;
@@ -55,7 +54,7 @@ private:
 
 	TCPServer* m_svr;
 
-	std::unordered_map<Session*, HttpContext*> m_contextMap;
+	std::unordered_map<Session*, HttpRequest*> m_requestMap;
 
 	Session* m_curSession;
 };

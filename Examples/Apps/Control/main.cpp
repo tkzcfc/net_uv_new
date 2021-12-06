@@ -116,7 +116,7 @@ void initClient()
 		((Client*)mgr->getUserData())->send(sessionID, data, len);
 	});
 
-	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len)
+	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, uint32_t msgID, char* data, uint32_t len)
 	{
 		Logger::getInstance().addLog("[%d]recv data[%d]:%s\n", sessionID, len, std::string(data, len).c_str());
 
@@ -210,7 +210,7 @@ void Application_Frame()
 				static char buf[65535] = { 0 };
 				if (ImGui::InputText("input", buf, 65535, ImGuiInputTextFlags_EnterReturnsTrue))
 				{
-					msgMng->sendMsg(ControlSessionID, buf, strlen(buf));
+					msgMng->sendMsg(ControlSessionID, 10001, buf, strlen(buf));
 					buf[0] = '\0';
 				}
 			}
@@ -218,8 +218,8 @@ void Application_Frame()
 			{
 				if (ImGui::Button("login"))
 				{
-					static const char szControlCMD[] = "control";
-					msgMng->sendMsg(ControlSessionID, (char*)szControlCMD, sizeof(szControlCMD));
+					static const char szControlCMD[] = "login";
+					msgMng->sendMsg(ControlSessionID, 10000, (char*)szControlCMD, sizeof(szControlCMD));
 				}
 			}
 		}

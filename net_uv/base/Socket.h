@@ -12,6 +12,14 @@ using SocketConnectCall = std::function<void(Socket*,int32_t)>;	//0:failed 1:suc
 using SocketCloseCall = std::function<void(Socket*)>; 
 using SocketRecvCall = std::function<void(char*, ssize_t)>;
 
+typedef void(*SocketSendCall)(void*);
+
+struct socket_send_buf : uv_buf_t
+{
+	void* userdata;
+	SocketSendCall call;
+};
+
 class Socket
 {
 public:
@@ -26,7 +34,7 @@ public:
 
 	virtual bool connect(const char* ip, uint32_t port) = 0;
 
-	virtual bool send(char* data, int32_t len) = 0;
+	virtual bool send(char* data, int len, SocketSendCall call, void* userdata) = 0;
 
 	virtual void disconnect() = 0;
 
@@ -134,6 +142,5 @@ uv_loop_t* Socket::getLoop()
 {
 	return m_loop;
 }
-
 
 NS_NET_UV_END

@@ -7,6 +7,7 @@ enum
 {
 	KCP_SVR_OP_STOP_SERVER,	// stop svr
 	KCP_SVR_OP_SEND_DATA,	// send data
+	KCP_SVR_OP_SEND_CLOSE,	// send & close
 	KCP_SVR_OP_DIS_SESSION,	// disconnect session
 	KCP_SVR_OP_SEND_DIS_SESSION_MSG_TO_MAIN_THREAD,
 };
@@ -148,6 +149,16 @@ void KCPServer::send(uint32_t sessionID, char* data, uint32_t len)
 	pushOperation(KCP_SVR_OP_SEND_DATA, pdata, len, sessionID);
 }
 
+void KCPServer::sendAndClose(uint32_t sessionID, char* data, uint32_t len)
+{
+	if (!m_start || data == NULL || len <= 0)
+		return;
+
+	char* pdata = (char*)fc_malloc(len);
+	memcpy(pdata, data, len);
+	pushOperation(KCP_SVR_OP_SEND_CLOSE, pdata, len, sessionID);
+}
+
 void KCPServer::disconnect(uint32_t sessionID)
 {
 	pushOperation(KCP_SVR_OP_DIS_SESSION, NULL, 0, sessionID);
@@ -283,6 +294,19 @@ void KCPServer::executeOperation()
 			if (it != m_allSession.end())
 			{
 				it->second.session->executeSend((char*)curOperation.operationData, curOperation.operationDataLen);
+			}
+			else
+			{
+				//invalid session
+				fc_free(curOperation.operationData);
+			}
+		}break;
+		case KCP_SVR_OP_SEND_CLOSE:
+		{
+			auto it = m_allSession.find(curOperation.sessionID);
+			if (it != m_allSession.end())
+			{
+				it->second.session->executeSendAndClose((char*)curOperation.operationData, curOperation.operationDataLen);
 			}
 			else
 			{

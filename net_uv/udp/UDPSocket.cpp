@@ -119,7 +119,7 @@ bool UDPSocket::connect(const char* ip, uint32_t port)
 	return true;
 }
 
-bool UDPSocket::send(char* data, int32_t len)
+bool UDPSocket::send(char* data, int len, SocketSendCall call, void* userdata)
 {
 	return false;
 }

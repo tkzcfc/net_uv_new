@@ -18,7 +18,7 @@ public:
 
 	HttpResponse();
 
-	std::string toString() const;
+	void toString(std::string& output) const;
 
 public:
 

@@ -2,6 +2,7 @@
 
 NS_NET_UV_BEGIN
 
+
 TCPSocket::TCPSocket(uv_loop_t* loop)
 	: m_newConnectionCall(nullptr)
 	, m_tcp(NULL)
@@ -119,7 +120,7 @@ bool TCPSocket::connect(const char* ip, uint32_t port)
 	return true;
 }
 
-bool TCPSocket::send(char* data, int32_t len)
+bool TCPSocket::send(char* data, int len, SocketSendCall call, void* userdata)
 {
 	if (m_tcp == NULL)
 	{
@@ -127,9 +128,11 @@ bool TCPSocket::send(char* data, int32_t len)
 		return false;
 	}
 
-	uv_buf_t* buf = (uv_buf_t*)fc_malloc(sizeof(uv_buf_t));
+	socket_send_buf* buf = (socket_send_buf*)fc_malloc(sizeof(socket_send_buf));
 	buf->base = (char*)data;
 	buf->len = len;
+	buf->userdata = userdata;
+	buf->call = call;
 	
 	uv_write_t *req = (uv_write_t*)fc_malloc(sizeof(uv_write_t));
 	req->data = buf;
@@ -309,7 +312,11 @@ void TCPSocket::uv_on_after_write(uv_write_t* req, int32_t status)
 	{
 		NET_UV_LOG(NET_UV_L_ERROR, "tcp write error %s", uv_strerror(status));
 	}
-	uv_buf_t* buf = (uv_buf_t*)req->data;
+	socket_send_buf* buf = (socket_send_buf*)req->data;
+
+	if (buf->call)
+		buf->call(buf->userdata);
+
 	fc_free(buf->base);
 	fc_free(buf);
 	fc_free(req);

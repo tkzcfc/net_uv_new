@@ -17,6 +17,8 @@ public:
 
 	virtual void send(char* data, uint32_t len);
 
+	virtual void sendAndClose(char* data, uint32_t len);
+
 	virtual void disconnect();
 
 	inline uint32_t getSessionID();
@@ -28,6 +30,8 @@ public:
 protected:
 
 	virtual void executeSend(char* data, uint32_t len) = 0;
+
+	virtual void executeSendAndClose(char* data, uint32_t len) = 0;
 
 	virtual void executeDisconnect() = 0;
 

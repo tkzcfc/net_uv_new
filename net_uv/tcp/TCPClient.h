@@ -40,6 +40,8 @@ public:
 
 	virtual void send(uint32_t sessionId, char* data, uint32_t len)override;
 
+	virtual void sendAndClose(uint32_t sessionID, char* data, uint32_t len)override;
+
 	bool setSocketNoDelay(bool enable);
 
 	bool setSocketKeepAlive(int32_t enable, uint32_t delay);

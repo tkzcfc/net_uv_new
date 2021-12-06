@@ -50,7 +50,7 @@ int main(int argc, const char*argv[])
 		((Client*)mgr->getUserData())->send(sessionID, data, len);
 	});
 
-	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, char* data, uint32_t len) 
+	msgMng->setOnMsgCallback([](NetMsgMgr* mgr, uint32_t sessionID, uint32_t msgID, char* data, uint32_t len)
 	{
 		char* msg = (char*)fc_malloc(len + 1);
 		memcpy(msg, data, len);
@@ -139,7 +139,7 @@ int main(int argc, const char*argv[])
 					sprintf(szWriteBuf, "this is %d send data...", i);
 					if (msgMng)
 					{
-						msgMng->sendMsg(i, szWriteBuf, (uint32_t)strlen(szWriteBuf));
+						msgMng->sendMsg(i, 0, szWriteBuf, (uint32_t)strlen(szWriteBuf));
 					}
 				}
 				curCount = 0;
@@ -220,7 +220,7 @@ bool cmdResolve(char* cmd, uint32_t key)
 			szMsg[i] = 'A';
 		}
 		szMsg[msgLen - 1] = '\0';
-		msgMng->sendMsg(key, szMsg, (uint32_t)strlen(szMsg));
+		msgMng->sendMsg(key, 0, szMsg, (uint32_t)strlen(szMsg));
 		fc_free(szMsg);
 	}
 	else

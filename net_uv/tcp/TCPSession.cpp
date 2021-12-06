@@ -65,7 +65,30 @@ void TCPSession::executeSend(char* data, uint32_t len)
 
 	if (isOnline())
 	{
-		if (!m_socket->send(data, len))
+		if (!m_socket->send(data, len, NULL, NULL))
+		{
+			executeDisconnect();
+		}
+	}
+	else
+	{
+		fc_free(data);
+	}
+}
+
+void TCPSession::executeSendAndClose(char* data, uint32_t len)
+{
+	if (data == NULL || len <= 0)
+		return;
+
+	if (isOnline())
+	{
+		auto call = [](void* userdata) {
+			TCPSession* self = (TCPSession*)userdata;
+			self->disconnect();
+		};
+
+		if (!m_socket->send(data, len, call, this))
 		{
 			executeDisconnect();
 		}

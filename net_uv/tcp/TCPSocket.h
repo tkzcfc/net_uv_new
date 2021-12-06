@@ -23,7 +23,7 @@ public:
 
 	virtual bool connect(const char* ip, unsigned int port)override;
 
-	virtual bool send(char* data, int len)override;
+	virtual bool send(char* data, int len, SocketSendCall call, void* userdata)override;
 
 	TCPSocket* accept(uv_stream_t* server, int status);
 

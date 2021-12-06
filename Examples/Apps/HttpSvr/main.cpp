@@ -23,8 +23,14 @@ int main(int argc, const char*argv[])
 		{
 			svr->stopServer();
 		}
+		printf("\n\n\n");
 		printf("query:%s\n", request.query().c_str());
 		printf("path:%s\n", request.path().c_str());
+
+		for (auto& it : request.headers())
+		{
+			printf("header:%s=%s\n", it.field.c_str(), it.value.c_str());
+		}
 
 		response->setBody("ok");
 	});

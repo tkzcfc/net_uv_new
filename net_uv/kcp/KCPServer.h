@@ -36,6 +36,8 @@ public:
 	/// SessionManager
 	virtual void send(uint32_t sessionID, char* data, uint32_t len)override;
 
+	virtual void sendAndClose(uint32_t sessionID, char* data, uint32_t len)override;
+
 	virtual void disconnect(uint32_t sessionID)override;
 
 protected:

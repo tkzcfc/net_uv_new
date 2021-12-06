@@ -8,9 +8,9 @@ HttpResponse::HttpResponse()
 {
 }
 
-std::string HttpResponse::toString() const
+void HttpResponse::toString(std::string& output) const
 {
-	std::string output;
+	output.clear();
 
 	char buf[32];
 	snprintf(buf, sizeof buf, "HTTP/1.1 %d ", m_statusCode);
@@ -39,8 +39,6 @@ std::string HttpResponse::toString() const
 
 	output.append("\r\n");
 	output.append(m_body);
-
-	return output;
 }
 
 

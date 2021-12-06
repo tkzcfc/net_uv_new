@@ -26,7 +26,7 @@ public:
 
 	virtual bool connect(const char* ip, uint32_t port)override;
 
-	virtual bool send(char* data, int32_t len)override;
+	virtual bool send(char* data, int len, SocketSendCall call, void* userdata)override;
 
 	virtual void disconnect()override;
 

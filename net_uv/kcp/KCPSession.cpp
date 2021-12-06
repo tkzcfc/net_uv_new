@@ -56,9 +56,28 @@ void KCPSession::executeSend(char* data, uint32_t len)
 
 	if (isOnline())
 	{
-		if (!m_socket->send(data, len))
+		if (!m_socket->send(data, len, NULL, NULL))
 		{
 			executeDisconnect();
+		}
+	}
+	fc_free(data);
+}
+
+void KCPSession::executeSendAndClose(char* data, uint32_t len)
+{
+	if (data == NULL || len <= 0)
+		return;
+
+	if (isOnline())
+	{
+		if (!m_socket->send(data, len, NULL, NULL))
+		{
+			executeDisconnect();
+		}
+		else
+		{
+			this->disconnect();
 		}
 	}
 	fc_free(data);

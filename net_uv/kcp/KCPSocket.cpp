@@ -181,14 +181,18 @@ bool KCPSocket::connect(const char* ip, uint32_t port)
 	return true;
 }
 
-bool KCPSocket::send(char* data, int32_t len)
+bool KCPSocket::send(char* data, int len, SocketSendCall call, void* userdata)
 {
 	if (m_kcp == NULL)
 	{
 		return false;
 	}
 	assert(len <= KCP_MAX_MSG_SIZE);
-	return ikcp_send(m_kcp, data, len) >= 0;
+	bool ok = ikcp_send(m_kcp, data, len) >= 0;
+
+	if (call) call(userdata);
+
+	return ok;
 }
 
 void KCPSocket::disconnect()

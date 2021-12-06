@@ -4,93 +4,80 @@
 
 NS_NET_UV_BEGIN
 
+
+struct Pairs
+{
+	std::string field;
+	std::string value;
+};
+
 class HttpRequest
 {
 public:
-	enum Method
-	{
-		kInvalid, kGet, kPost, kHead, kPut, kDelete
-	};
-	enum Version
-	{
-		kUnknown, kHttp10, kHttp11
-	};
 
 	HttpRequest();
 
-	bool setMethod(const char* start, const char* end);
+	bool parse(const char* data, size_t len);
+
+	bool ok();
+
+public:
 
 	const char* methodString() const;
-
-	void addHeader(const char* start, const char* colon, const char* end);
 
 	std::string getHeader(const std::string& field) const;
 
 	std::string getParam(const std::string& key, const std::string& defaultValue) const;
 
-	void swap(HttpRequest& that);
-
 public:
 
-	inline void setVersion(Version v);
-
-	inline Version getVersion() const;
-
-	inline Method method() const;
-
-	inline void setPath(const char* start, const char* end);
-
-	inline void setPath(const std::string& path);
+	
+	inline http_method method() const;
 
 	inline  const std::string& path() const;
 
-	inline  void setQuery(const char* start, const char* end);
-
-	inline  void setQuery(const std::string& query);
-
 	inline  const std::string& query() const;
 
-	inline const std::map<std::string, std::string>& headers() const;
+	inline const std::vector<Pairs>& headers() const;
 
 	inline const std::map<std::string, std::string>& params() const;
 
+	inline const http_parser parser() const;
+	
 private:
-
+	void reset();
+	void processRequestLine();
 	void parseQuery();
 
+	static int on_message_begin(http_parser* parser);
+	static int on_url(http_parser* parser, const char* at, size_t length);
+	static int on_headers_complete(http_parser* parser);
+	static int on_message_complete(http_parser* parser);
+	static int on_header_field(http_parser* parser, const char* at, size_t length);
+	static int on_header_value(http_parser* parser, const char* at, size_t length);
+	static int on_body(http_parser* parser, const char* at, size_t length);
+
 private:
-	Method m_method;
-	Version m_version;
+	// example: /a/b/c?name=xxx&lang=en
+	std::string m_url;
+	// example: a/b/c
 	std::string m_path;
+	// example: name=xxx&lang=en
 	std::string m_query;
-	std::map<std::string, std::string> m_headers;
+
+	bool m_ok;
+	http_parser_settings m_settings;
+	http_parser m_parser;
+
+	int m_curHeaderIdx;
+	std::vector<Pairs> m_headers;
+
 	std::map<std::string, std::string> m_params;
 };
 
-
-void HttpRequest::setVersion(Version v)
+http_method HttpRequest::method() const
 {
-	m_version = v;
-}
-
-HttpRequest::Version HttpRequest::getVersion() const
-{
-	return m_version;
-}
-
-HttpRequest::Method HttpRequest::method() const
-{
-	return m_method;
-}
-
-void HttpRequest::setPath(const char* start, const char* end)
-{
-	m_path.assign(start, end);
-}
-
-void HttpRequest::setPath(const std::string& path)
-{
-	m_path = std::move(path);
+	return (http_method)m_parser.method;
 }
 
 const std::string& HttpRequest::path() const
@@ -98,24 +85,12 @@ const std::string& HttpRequest::path() const
 	return m_path;
 }
 
-void HttpRequest::setQuery(const char* start, const char* end)
-{
-	m_query.assign(start, end);
-	parseQuery();
-}
-
-void HttpRequest::setQuery(const std::string& query)
-{
-	m_query = std::move(query);
-	parseQuery();
-}
-
 const std::string& HttpRequest::query() const
 {
 	return m_query;
 }
 
-const std::map<std::string, std::string>& HttpRequest::headers() const
+const std::vector<Pairs>& HttpRequest::headers() const
 {
 	return m_headers;
 }
@@ -123,6 +98,11 @@ const std::map<std::string, std::string>& HttpRequest::headers() const
 const std::map<std::string, std::string>& HttpRequest::params() const
 {
 	return m_params;
+}
+
+const http_parser HttpRequest::parser() const
+{
+	return m_parser;
 }
 
 NS_NET_UV_END
