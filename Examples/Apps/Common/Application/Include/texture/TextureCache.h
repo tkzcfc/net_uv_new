@@ -3,6 +3,7 @@
 #include "imgui.h"
 #include <map>
 #include <vector>
+#include <string>
 
 class TextureCache
 {
