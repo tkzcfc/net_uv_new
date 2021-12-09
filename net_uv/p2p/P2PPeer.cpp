@@ -333,19 +333,16 @@ void P2PPeer::startFailureLogic()
 	m_state = PeerState::STOP;
 }
 
-void P2PPeer::onPipeRecvJsonCallback(P2PMessageID msgID, rapidjson::Document& document, uint64_t key, const struct sockaddr* addr)
+void P2PPeer::onPipeRecvJsonCallback(P2PMessageID msgID, nlohmann::json& document, uint64_t key, const struct sockaddr* addr)
 {
 	switch (msgID)
 	{
 	case P2PMessageID::P2P_MSG_ID_T2C_CLIENT_LOGIN_RESULT:
 	{
-		if (document.HasMember("key"))
+		auto it_key = document.find("key");
+		if (it_key != document.end() && (*it_key).is_number_unsigned())
 		{
-			rapidjson::Value& key_value = document["key"];
-			if (key_value.IsUint64())
-			{
-				m_selfAddrInfo.key = key_value.GetUint64();
-			}
+			m_selfAddrInfo.key = it_key.value();
 			m_isConnectTurn = true;
 			m_isStopConnectToTurn = true;
 			pushOutputOperation(0, P2POperationCMD::P2P_CONNECT_TURN_SUC, NULL, 0);
@@ -354,21 +351,20 @@ void P2PPeer::onPipeRecvJsonCallback(P2PMessageID msgID, rapidjson::Document& do
 	break;
 	case P2PMessageID::P2P_MSG_ID_T2C_START_BURROW:
 	{
-		if (document.HasMember("key"))
+		auto it_key = document.find("key");
+		if (it_key != document.end() && (*it_key).is_number_unsigned())
 		{
-			rapidjson::Value& key_value = document["key"];
-			if (key_value.IsUint64())
-			{
-				startBurrow(key_value.GetUint64(), false);
-			}
+			uint64_t tokey = it_key.value();
+			startBurrow(tokey, false);
 		}
 	}break;
 	case P2PMessageID::P2P_MSG_ID_C2C_HELLO:
 	{
-		if (document.HasMember("isClient"))
+		auto it_key = document.find("isClient");
+		if (it_key != document.end() && (*it_key).is_boolean())
 		{
-			rapidjson::Value& key_value = document["isClient"];
-			if (key_value.IsBool() && key_value.GetBool())
+			bool isClient = it_key.value();
+			if (isClient)
 			{
 				doSendCreateKcp(key);
 			}
@@ -377,45 +373,46 @@ void P2PPeer::onPipeRecvJsonCallback(P2PMessageID msgID, rapidjson::Document& do
 	break;
 	case P2PMessageID::P2P_MSG_ID_C2T_CHECK_PEER_RESULT:
 	{
-		if (document.HasMember("toKey") && document.HasMember("code") && document.HasMember("tarAddr"))
+		auto it_toKey = document.find("toKey");
+		auto it_code = document.find("code");
+		auto it_tarAddr = document.find("tarAddr");
+
+		if (it_toKey != document.end() && (*it_toKey).is_number_unsigned() &&
+			it_code != document.end() && (*it_code).is_number_integer() &&
+			it_tarAddr != document.end() && (*it_tarAddr).is_number_unsigned())
 		{
-			rapidjson::Value& key_value = document["toKey"];
-			rapidjson::Value& code_value = document["code"];
-			rapidjson::Value& tarAddr_value = document["tarAddr"];
-			if (key_value.IsUint64() && code_value.IsUint() && tarAddr_value.IsUint64())
+			uint64_t tokey = it_toKey.value();
+			uint32_t code = it_code.value();
+			uint64_t tarAddr = it_tarAddr.value();
+
+			auto it = m_connectToPeerSessionMng.find(tokey);
+			if (it == m_connectToPeerSessionMng.end())
 			{
-				uint64_t tokey = key_value.GetUint64();
-				uint32_t code = code_value.GetUint();
+				return;
+			}
+			it->second.state = CONNECTING;
+			it->second.tryConnectCount = 0;
 
-				auto it = m_connectToPeerSessionMng.find(tokey);
-				if (it == m_connectToPeerSessionMng.end())
+			if (m_acceptPerrSessionMng.find(tarAddr) == m_acceptPerrSessionMng.end())
+			{
+				if (code == 0 || code == 1)
 				{
-					return;
+					it->second.sendToAddr.key = tarAddr;
+					startBurrow(tarAddr, true);
 				}
-				it->second.state = CONNECTING;
-				it->second.tryConnectCount = 0;
-
-				if (m_acceptPerrSessionMng.find(tarAddr_value.GetUint64()) == m_acceptPerrSessionMng.end())
-				{
-					if (code == 0 || code == 1)
-					{
-						it->second.sendToAddr.key = tarAddr_value.GetUint64();
-						startBurrow(tarAddr_value.GetUint64(), true);
-					}
-					// code : 2
-					// 找不到目标
-					else
-					{
-						pushOutputOperation(it->first, P2POperationCMD::P2P_CONNECT_PEER_FAIL_NOT_FOUND, NULL, 0);
-						m_connectToPeerSessionMng.erase(it);
-					}
-				}
+				// code : 2
+				// 找不到目标
 				else
 				{
-					// 已经作为客户端连接到本Peer了
-					pushOutputOperation(tarAddr_value.GetUint64(), P2POperationCMD::P2P_CONNECT_PEER_FAIL_CLI_SESSION, NULL, 0);
+					pushOutputOperation(it->first, P2POperationCMD::P2P_CONNECT_PEER_FAIL_NOT_FOUND, NULL, 0);
 					m_connectToPeerSessionMng.erase(it);
 				}
+			}
+			else
+			{
+				// 已经作为客户端连接到本Peer了
+				pushOutputOperation(tarAddr, P2POperationCMD::P2P_CONNECT_PEER_FAIL_CLI_SESSION, NULL, 0);
+				m_connectToPeerSessionMng.erase(it);
 			}
 		}
 	}break;
@@ -574,13 +571,10 @@ void P2PPeer::runInputOperation()
 		{
 			if (m_connectToPeerSessionMng.find(opData.key) == m_connectToPeerSessionMng.end())
 			{
-				rapidjson::StringBuffer s;
-				rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+				nlohmann::json obj;
+				obj["toKey"] = opData.key;
 
-				writer.StartObject();
-				writer.Key("toKey");
-				writer.Uint64(opData.key);
-				writer.EndObject();
+				std::string serialized_str = obj.dump();
 
 				SessionData sessionData;
 				sessionData.state = CHECKING;
@@ -588,7 +582,7 @@ void P2PPeer::runInputOperation()
 				sessionData.sendToAddr.key = 0;
 				m_connectToPeerSessionMng[opData.key] = sessionData;
 
-				m_pipe.send(P2PMessageID::P2P_MSG_ID_C2T_CHECK_PEER, s.GetString(), s.GetLength(), m_turnAddrInfo.ip, m_turnAddrInfo.port);
+				m_pipe.send(P2PMessageID::P2P_MSG_ID_C2T_CHECK_PEER, serialized_str.c_str(), serialized_str.size(), m_turnAddrInfo.ip, m_turnAddrInfo.port);
 			}
 		}break;
 		case P2POperationCMD::P2P_CONNECT_TO_TURN:
@@ -643,15 +637,10 @@ void P2PPeer::startBurrow(uint64_t toKey, bool isClient)
 		burrowData.sendCount = 0;
 		uv_ip4_addr(addr, info.port, &burrowData.targetAddr);
 
-		rapidjson::StringBuffer s;
-		rapidjson::Writer<rapidjson::StringBuffer> writer(s);
 
-		writer.StartObject();
-		writer.Key("isClient");
-		writer.Bool(isClient);
-		writer.EndObject();
-
-		burrowData.sendData = std::string(s.GetString(), s.GetSize());
+		nlohmann::json obj;
+		obj["isClient"] = isClient;
+		burrowData.sendData = obj.dump();
 
 		m_burrowManager.insert(std::make_pair(toKey, burrowData));
 
@@ -689,24 +678,22 @@ void P2PPeer::doConnectToTurn()
 	{
 		getLocalAddressIPV4Info(m_localAddrInfoCache);
 	}
+	
 
-	rapidjson::StringBuffer s;
-	rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-
-	writer.StartArray();
+	nlohmann::json obj;
 	for (auto i = 0U; i < m_localAddrInfoCache.size(); ++i)
 	{
-		writer.StartObject();
-		writer.Key("ip");
-		writer.Uint64(m_localAddrInfoCache[i].addr.key);
-		writer.Key("mask");
-		writer.Uint(m_localAddrInfoCache[i].mask);
-		writer.EndObject();
+		nlohmann::json tmp;
+		tmp["ip"] = m_localAddrInfoCache[i].addr.key;
+		tmp["mask"] = m_localAddrInfoCache[i].mask;
+
+		obj[i] = tmp;
 	}
-	writer.EndArray();
+
+	std::string serialized_str = obj.dump();
 
 	m_tryConnectTurnCount++;
-	m_pipe.send(P2PMessageID::P2P_MSG_ID_C2T_CLIENT_LOGIN, s.GetString(), s.GetLength(), m_turnAddrInfo.ip, m_turnAddrInfo.port);
+	m_pipe.send(P2PMessageID::P2P_MSG_ID_C2T_CLIENT_LOGIN, serialized_str.c_str(), serialized_str.size(), m_turnAddrInfo.ip, m_turnAddrInfo.port);
 }
 
 void P2PPeer::doSendCreateKcp(uint64_t toKey)

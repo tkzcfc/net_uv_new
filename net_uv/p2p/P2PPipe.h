@@ -5,7 +5,7 @@
 
 NS_NET_UV_BEGIN
 
-using P2PPipeRecvJsonCallback = std::function<void(P2PMessageID msgID, rapidjson::Document& document, uint64_t key, const struct sockaddr* addr)>;
+using P2PPipeRecvJsonCallback = std::function<void(P2PMessageID msgID, nlohmann::json& document, uint64_t key, const struct sockaddr* addr)>;
 using P2PPipeRecvKcpCallback = std::function<void(char* data, uint32_t len, uint64_t key, const struct sockaddr* addr)>;
 using P2PPipeNewSessionCallback = std::function<void(uint64_t key)>;
 using P2PPipeNewKcpCreateCallback = std::function<void(uint64_t key, uint32_t tag)>;
@@ -80,13 +80,13 @@ protected:
 
 	void on_recv_kcpMsg(uint64_t key, char* data, uint32_t len, const struct sockaddr* addr);
 
-	void on_recv_pong(uint64_t key, rapidjson::Document& document, const struct sockaddr* addr);
+	void on_recv_pong(uint64_t key, nlohmann::json& document, const struct sockaddr* addr);
 
-	void on_recv_createKcp(uint64_t key, rapidjson::Document& document, const struct sockaddr* addr);
+	void on_recv_createKcp(uint64_t key, nlohmann::json& document, const struct sockaddr* addr);
 
-	void on_recv_createKcpResult(uint64_t key, rapidjson::Document& document, const struct sockaddr* addr);
+	void on_recv_createKcpResult(uint64_t key, nlohmann::json& document, const struct sockaddr* addr);
 
-	void on_recv_disconnect(uint64_t key, rapidjson::Document& document, const struct sockaddr* addr);
+	void on_recv_disconnect(uint64_t key, nlohmann::json& document, const struct sockaddr* addr);
 
 	void createKcp(uint64_t key, uint32_t conv, uint32_t tag);
 

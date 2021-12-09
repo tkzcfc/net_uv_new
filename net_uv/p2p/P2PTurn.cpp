@@ -71,7 +71,7 @@ void P2PTurn::onIdleRun()
 	}
 }
 
-void P2PTurn::onPipeRecvJsonCallback(P2PMessageID msgID, rapidjson::Document& document, uint64_t key, const struct sockaddr* addr)
+void P2PTurn::onPipeRecvJsonCallback(P2PMessageID msgID, nlohmann::json& document, uint64_t key, const struct sockaddr* addr)
 {
 	switch (msgID)
 	{
@@ -83,123 +83,109 @@ void P2PTurn::onPipeRecvJsonCallback(P2PMessageID msgID, rapidjson::Document& do
 			m_key_peerDataMap.erase(it);
 		}
 		
-		if (document.IsArray())
+		if (document.is_array())
 		{
 			PeerData peerData;
 			peerData.localAddrInfoCount = 0;
 			peerData.addrInfo.key = key;
 
-			auto cliInfoArr = document.GetArray();
 			
-			for (auto i = 0U; i < cliInfoArr.Size(); ++i)
+			auto size = document.size();
+			for (auto i = 0U; i < size; ++i)
 			{
 				if(i >= PEER_LOCAL_ADDR_INFO_MAX_COUNT)
 					break;
 
-				if(!cliInfoArr[i].IsObject() 
-					|| !cliInfoArr[i].HasMember("ip") 
-					|| !cliInfoArr[i].HasMember("mask")
-					|| !cliInfoArr[i]["ip"].IsUint64()
-					|| !cliInfoArr[i]["mask"].IsUint())
+				auto& obj = document[i];
+
+				if (!obj.is_object())
 					break;
 
-				peerData.localAddrInfoArr[i].addr.key = cliInfoArr[i]["ip"].GetUint64();
-				peerData.localAddrInfoArr[i].mask = cliInfoArr[i]["mask"].GetUint();
-				peerData.localAddrInfoCount = i + 1;
+				auto it_ip = obj.find("ip");
+				auto it_mask = obj.find("mask");
+
+				if (it_ip != obj.end() && (*it_ip).is_number_integer() &&
+					it_mask != obj.end() && (*it_mask).is_number_integer())
+				{
+					peerData.localAddrInfoArr[i].addr.key = it_ip.value();
+					peerData.localAddrInfoArr[i].mask = it_mask.value();
+					peerData.localAddrInfoCount = i + 1;
+				}
 			}
 			m_key_peerDataMap.emplace(key, peerData);
 		}
 
-		rapidjson::StringBuffer s;
-		rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+		nlohmann::json obj;
+		obj["key"] = key;
 
-		writer.StartObject();
-		writer.Key("key");
-		writer.Uint64(key);
-		writer.EndObject();
-
-		m_pipe.send(P2PMessageID::P2P_MSG_ID_T2C_CLIENT_LOGIN_RESULT, s.GetString(), s.GetLength(), addr);
+		std::string serialized_str = obj.dump();
+		m_pipe.send(P2PMessageID::P2P_MSG_ID_T2C_CLIENT_LOGIN_RESULT, serialized_str.c_str(), serialized_str.size(), addr);
 	}
 		break;
 	case net_uv::P2P_MSG_ID_C2T_CHECK_PEER:
 	{
-		if (document.HasMember("toKey"))
+		auto it_toKey = document.find("toKey");
+		if (it_toKey != document.end() && (*it_toKey).is_number_unsigned())
 		{
-			rapidjson::Value& key_value = document["toKey"];
-			if (key_value.IsUint64())
+			uint64_t toKey = it_toKey.value();
+			uint32_t code = 0;
+			uint64_t targetAddr = toKey;
+			uint64_t burrowAddr = key;
+
+			auto it_target = m_key_peerDataMap.find(toKey);
+			auto it_my = m_key_peerDataMap.find(key);
+			if (it_target == m_key_peerDataMap.end() || it_my == m_key_peerDataMap.end())
 			{
-				rapidjson::StringBuffer s;
-				rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+				// 找不到目标
+				code = 2;
+			}
+			else
+			{
+				AddrInfo targetInfo;
+				targetInfo.key = toKey;
 
-				uint32_t code = 0;
-				uint64_t targetAddr = key_value.GetUint64();
-				uint64_t burrowAddr = key;
+				AddrInfo myInfo;
+				myInfo.key = key;
 
-				auto it_target = m_key_peerDataMap.find(key_value.GetUint64());
-				auto it_my = m_key_peerDataMap.find(key);
-				if (it_target == m_key_peerDataMap.end() || it_my == m_key_peerDataMap.end())
+				// 同一局域网
+				if (myInfo.ip == targetInfo.ip && it_target->second.localAddrInfoCount > 0 && it_my->second.localAddrInfoCount > 0)
 				{
-					// 找不到目标
-					code = 2;
-				}
-				else
-				{
-					AddrInfo targetInfo;
-					targetInfo.key = key_value.GetUint64();
-
-					AddrInfo myInfo;
-					myInfo.key = key;
-
-					// 同一局域网
-					if (myInfo.ip == targetInfo.ip && it_target->second.localAddrInfoCount > 0 && it_my->second.localAddrInfoCount > 0)
+					// 判断是否在一个网段
+					for (auto i = 0U; i < it_target->second.localAddrInfoCount; ++i)
 					{
-						// 判断是否在一个网段
-						for (auto i = 0U; i < it_target->second.localAddrInfoCount; ++i)
+						uint32_t tag_ip = it_target->second.localAddrInfoArr[i].addr.ip;
+						uint32_t tag_mask = it_target->second.localAddrInfoArr[i].mask;
+						for (auto j = 0U; j < it_my->second.localAddrInfoCount; ++j)
 						{
-							uint32_t tag_ip = it_target->second.localAddrInfoArr[i].addr.ip;
-							uint32_t tag_mask = it_target->second.localAddrInfoArr[i].mask;
-							for (auto j = 0U; j < it_my->second.localAddrInfoCount; ++j)
+							uint32_t my_ip = it_my->second.localAddrInfoArr[j].addr.ip;
+							uint32_t my_mask = it_my->second.localAddrInfoArr[j].mask;
+							if ((tag_ip & tag_mask) == (my_ip & my_mask))
 							{
-								uint32_t my_ip = it_my->second.localAddrInfoArr[j].addr.ip;
-								uint32_t my_mask = it_my->second.localAddrInfoArr[j].mask;
-								if ((tag_ip & tag_mask) == (my_ip & my_mask))
-								{
-									// 使用局域网连接
-									code = 1;
-									targetAddr = it_target->second.localAddrInfoArr[i].addr.key;
-								}
+								// 使用局域网连接
+								code = 1;
+								targetAddr = it_target->second.localAddrInfoArr[i].addr.key;
 							}
 						}
 					}
 				}
-				writer.StartObject();
+			}
 
-				writer.Key("code");
-				writer.Uint(code);
+			nlohmann::json obj;
+			obj["code"] = code;
+			obj["toKey"] = toKey;
+			obj["tarAddr"] = targetAddr;
 
-				writer.Key("toKey");
-				writer.Uint64(key_value.GetUint64());
+			std::string serialized_str = obj.dump();
+			m_pipe.send(P2PMessageID::P2P_MSG_ID_C2T_CHECK_PEER_RESULT, serialized_str.c_str(), serialized_str.size(), addr);
 
-				writer.Key("tarAddr");
-				writer.Uint64(targetAddr);
+			/// 向目标peer发送打洞指令
+			if (code == 0)
+			{
+				nlohmann::json obj;
+				obj["key"] = burrowAddr;
 
-				writer.EndObject();
-				
-				m_pipe.send(P2PMessageID::P2P_MSG_ID_C2T_CHECK_PEER_RESULT, s.GetString(), s.GetLength(), addr);
-
-				/// 向目标peer发送打洞指令
-				if (code == 0)
-				{
-					rapidjson::StringBuffer s;
-					rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-
-					writer.StartObject();
-					writer.Key("key");
-					writer.Uint64(burrowAddr);
-					writer.EndObject();
-
-					m_pipe.send(P2PMessageID::P2P_MSG_ID_T2C_START_BURROW, s.GetString(), s.GetLength(), it_target->second.addrInfo.ip, it_target->second.addrInfo.port);
-				}
+				std::string serialized_str = obj.dump();
+				m_pipe.send(P2PMessageID::P2P_MSG_ID_T2C_START_BURROW, serialized_str.c_str(), serialized_str.size(), it_target->second.addrInfo.ip, it_target->second.addrInfo.port);
 			}
 		}
 	} break;

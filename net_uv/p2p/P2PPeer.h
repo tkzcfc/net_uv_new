@@ -64,7 +64,7 @@ protected:
 
 	void startFailureLogic();
 
-	void onPipeRecvJsonCallback(P2PMessageID msgID, rapidjson::Document& document, uint64_t key, const struct sockaddr* addr);
+	void onPipeRecvJsonCallback(P2PMessageID msgID, nlohmann::json& document, uint64_t key, const struct sockaddr* addr);
 
 	void onPipeRecvKcpCallback(char* data, uint32_t len, uint64_t key, const struct sockaddr* addr);
 

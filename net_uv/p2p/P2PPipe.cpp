@@ -183,13 +183,10 @@ void P2PPipe::heartCheck(uint32_t interval)
 		return;
 	}
 
-	rapidjson::StringBuffer s;
-	rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+	nlohmann::json obj;
+	obj["time"] = m_updateTime;
 
-	writer.StartObject();
-	writer.Key("time");
-	writer.Uint(m_updateTime);
-	writer.EndObject();
+	std::string serialized_str = obj.dump();
 
 	for (auto it = m_allSessionDataMap.begin(); it != m_allSessionDataMap.end(); )
 	{
@@ -205,7 +202,7 @@ void P2PPipe::heartCheck(uint32_t interval)
 				if (m_updateTime - it->second.lastCheckTime >= 1000)
 				{
 					it->second.noResponseCount++;
-					send(P2PMessageID::P2P_MSG_ID_PING, s.GetString(), s.GetLength(), (const struct sockaddr*)&it->second.send_addr);
+					send(P2PMessageID::P2P_MSG_ID_PING, serialized_str.c_str(), serialized_str.size(), (const struct sockaddr*)&it->second.send_addr);
 				}
 				it++;
 			}
@@ -305,11 +302,10 @@ void P2PPipe::on_udp_read(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, 
 	// json格式数据
 	if (P2PMessageID::P2P_MSG_ID_JSON_BEGIN < msg->msgID && msg->msgID < P2PMessageID::P2P_MSG_ID_JSON_END)
 	{
-		rapidjson::Document document;
-		document.Parse(data, msg->msgLen);
-
-		if (!document.HasParseError())
+		std::string content(data, msg->msgLen);
+		try
 		{
+			auto document = nlohmann::json::parse(content);
 			// pong
 			if (msg->msgID == P2PMessageID::P2P_MSG_ID_PONG)
 			{
@@ -335,9 +331,13 @@ void P2PPipe::on_udp_read(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, 
 				m_recvJsonCallback((P2PMessageID)msg->msgID, document, info.key, addr);
 			}
 		}
-		else
+		catch (const nlohmann::json::parse_error& err)
 		{
-			NET_UV_LOG(NET_UV_L_ERROR, "json parse error: %u", document.GetParseError());
+			NET_UV_LOG(NET_UV_L_ERROR, "json parse_error: ", err.what());
+		}
+		catch (...)
+		{
+			NET_UV_LOG(NET_UV_L_ERROR, "json unknown error");
 		}
 	}
 }
@@ -375,35 +375,33 @@ void P2PPipe::on_recv_kcpMsg(uint64_t key, char* data, uint32_t len, const struc
 	} while (kcp_recvd_bytes > 0);
 }
 
-void P2PPipe::on_recv_pong(uint64_t key, rapidjson::Document& document, const struct sockaddr* addr)
+void P2PPipe::on_recv_pong(uint64_t key, nlohmann::json& document, const struct sockaddr* addr)
 {
 	auto it = m_allSessionDataMap.find(key);
 	if (it != m_allSessionDataMap.end())
 	{
-		if (document.HasMember("time"))
+		auto it_time = document.find("time");
+		if (it_time != document.end() && (*it_time).is_number_unsigned())
 		{
-			rapidjson::Value& time_value = document["time"];
-			if (time_value.IsUint())
-			{
-				int32_t sub = m_updateTime - time_value.GetUint();
-				it->second.delayTime = sub >= 0 ? sub : -sub;
-			}
+			uint32_t time = it_time.value();
+			int32_t sub = m_updateTime - time;
+			it->second.delayTime = sub >= 0 ? sub : -sub;
 		}
 	}
 }
 
-void P2PPipe::on_recv_createKcp(uint64_t key, rapidjson::Document& document, const struct sockaddr* addr)
+void P2PPipe::on_recv_createKcp(uint64_t key, nlohmann::json& document, const struct sockaddr* addr)
 {
 	createKcp(key, 0xFFFF, 0);
 	this->send(P2PMessageID::P2P_MSG_ID_CREATE_KCP_RESULT, P2P_NULL_JSON, P2P_NULL_JSON_LEN, addr);
 }
 
-void P2PPipe::on_recv_createKcpResult(uint64_t key, rapidjson::Document& document, const struct sockaddr* addr)
+void P2PPipe::on_recv_createKcpResult(uint64_t key, nlohmann::json& document, const struct sockaddr* addr)
 {
 	createKcp(key, 0xFFFF, 1);
 }
 
-void P2PPipe::on_recv_disconnect(uint64_t key, rapidjson::Document& document, const struct sockaddr* addr)
+void P2PPipe::on_recv_disconnect(uint64_t key, nlohmann::json& document, const struct sockaddr* addr)
 {
 	auto it = m_allSessionDataMap.find(key);
 	if (it != m_allSessionDataMap.end())

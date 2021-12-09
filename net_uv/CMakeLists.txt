@@ -65,6 +65,7 @@ set(NET_UV_KCP_SRC
 )
 
 set(NET_UV_P2P_SRC
+    p2p/json.hpp
     p2p/P2PCommon.h
     p2p/P2PMessage.h
     p2p/P2PPeer.cpp
