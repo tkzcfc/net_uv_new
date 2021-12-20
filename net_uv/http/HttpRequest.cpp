@@ -121,28 +121,7 @@ bool HttpRequest::ok()
 
 const char* HttpRequest::methodString() const
 {
-	const char* result = "UNKNOWN";
-	switch (m_parser.method)
-	{
-	case http_method::HTTP_DELETE:
-		result = "DELETE";
-		break;
-	case http_method::HTTP_GET:
-		result = "GET";
-		break;
-	case http_method::HTTP_HEAD:
-		result = "HEAD";
-		break;
-	case http_method::HTTP_POST:
-		result = "POST";
-		break;
-	case http_method::HTTP_PUT:
-		result = "PUT";
-		break;
-	default:
-		break;
-	}
-	return result;
+	return http_method_str(this->method());
 }
 
 std::string HttpRequest::getHeader(const std::string& field) const
