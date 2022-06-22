@@ -8,6 +8,22 @@
 NS_NET_UV_BEGIN
 
 
+// 最大消息长度10mb
+#define NET_UV_MAX_MSG_LEN (10485760)
+// 网络包分片大小
+#define NET_UV_WRITE_MAX_LEN (1400)
+
+struct NetMsgHead
+{
+	uint32_t len;// 消息长度，不包括本结构体
+	enum NetMsgType
+	{
+		PING,
+		PONG,
+		MSG
+	}type;
+};
+
 class NetMsgMgr;
 using NetMgrSendBuffCallback = void(*)(NetMsgMgr*, uint32_t, char*, uint32_t len);
 using NetMgrOnMsgCallback = void(*)(NetMsgMgr*, uint32_t, uint32_t, char*, uint32_t len);

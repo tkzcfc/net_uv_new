@@ -1,5 +1,4 @@
 #include "NetMsgMgr.h"
-#include "NetMsgUtils.h"
 #include <time.h>
 
 NS_NET_UV_BEGIN
@@ -50,7 +49,7 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 	auto recvBuf = it->second->buf;
 	recvBuf->add((char*)data, len);
 
-	while (recvBuf->getDataLength() >= NetMsgHeadLen)
+	while (recvBuf->getDataLength() >= sizeof(NetMsgHead))
 	{
 		NetMsgHead* h = (NetMsgHead*)recvBuf->getHeadBlockData();
 
@@ -58,11 +57,10 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 		{
 		case NetMsgHead::PING:
 		{
-			auto pMsg = (NetMsgHead*)fc_malloc(NetMsgHeadLen);
-			pMsg->len = 0;
-			pMsg->type = NetMsgHead::PONG;
-			m_sendCall(this, sessionID, (char*)pMsg, NetMsgHeadLen);
-			fc_free(pMsg);
+			NetMsgHead msg;
+			msg.len = 0;
+			msg.type = NetMsgHead::PONG;
+			m_sendCall(this, sessionID, (char*)&msg, sizeof(msg));
 			recvBuf->pop(NULL, sizeof(NetMsgHead));
 		}break;
 		case NetMsgHead::PONG:
@@ -71,8 +69,7 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 		}break;
 		case NetMsgHead::MSG:
 		{
-			//长度大于最大包长或长度小于等于零，不合法客户端
-			if (h->len > NET_UV_MAX_MSG_LEN || h->len <= 0)
+			if (h->len > NET_UV_MAX_MSG_LEN || h->len < sizeof(uint32_t))
 			{
 #if OPEN_NET_UV_DEBUG == 1
 				char* pMsg = (char*)fc_malloc(recvBuf->getDataLength());
@@ -81,13 +78,13 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 				fc_free(pMsg);
 				NET_UV_LOG(NET_UV_L_WARNING, errdata.c_str());
 #endif
-				NET_UV_LOG(NET_UV_L_WARNING, "数据不合法 (1)!!!!");
+				NET_UV_LOG(NET_UV_L_WARNING, "Illegal data received");
 				recvBuf->clear();
 				executeDisconnect(sessionID);
 				return;
 			}
 
-			int32_t subv = recvBuf->getDataLength() - (h->len + NetMsgHeadLen);
+			int32_t subv = recvBuf->getDataLength() - (h->len + sizeof(NetMsgHead));
 			//消息接收完成
 			if (subv >= 0)
 			{
@@ -100,32 +97,10 @@ void NetMsgMgr::onBuff(uint32_t sessionID, char* data, uint32_t len)
 				}
 				recvBuf->get(pMsg);
 
-				char* src = pMsg + NetMsgHeadLen;
+				char* src = pMsg + sizeof(NetMsgHead);
+				uint32_t msgId = *((uint32_t*)src);
 
-#if UV_ENABLE_DATA_CHECK == 1
-				uint32_t recvLen = 0;
-				char* recvData = net_uv_decode(src, h->len, recvLen);
-
-				if (recvData != NULL && recvLen > 0)
-				{
-					m_onMsgCall(this, sessionID, h->id, recvData, recvLen);
-					fc_free(recvData);
-				}
-				else//数据不合法
-				{
-					NET_UV_LOG(NET_UV_L_WARNING, "数据不合法 (3)!!!!");
-#if OPEN_NET_UV_DEBUG == 1
-					std::string errdata(pMsg, recvBuf->getDataLength());
-					NET_UV_LOG(NET_UV_L_WARNING, errdata.c_str());
-#endif
-					recvBuf->clear();
-					fc_free(pMsg);
-					executeDisconnect(sessionID);
-					return;
-				}
-#else
-				m_onMsgCall(this, sessionID, src, h->len);
-#endif
+				m_onMsgCall(this, sessionID, msgId, src + sizeof(uint32_t), h->len - sizeof(uint32_t));
 				recvBuf->clear();
 
 				if (subv > 0)
@@ -170,57 +145,54 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, uint32_t msgID, char* data, uint32_t
 		return;
 	}
 
+	assert(len >= 0);
+
 	if (len > NET_UV_MAX_MSG_LEN)
 	{
 #if defined (WIN32) || defined(_WIN32)
-		MessageBox(NULL, TEXT("消息超过最大限制"), TEXT("错误"), MB_OK);
+		MessageBox(NULL, TEXT("Message exceeds maximum length limit"), TEXT("ERROR"), MB_OK);
 #else
-		printf("消息超过最大限制");
+		printf("Message exceeds maximum length limit");
 #endif
 		assert(0);
 		return;
 	}
 
-#if UV_ENABLE_DATA_CHECK == 1
-	uint32_t encodelen = 0;
-	char* p = net_uv_encode(data, len, NetMsgHeadLen, encodelen);
-	if (p == NULL)
+	uint32_t totalLen = sizeof(NetMsgHead) + sizeof(uint32_t) + len;
+	auto offset = sizeof(NetMsgHead);
+	
+	char* p = (char*)fc_malloc(totalLen);
+
+	NetMsgHead* h = (NetMsgHead*)p;
+	h->len = sizeof(uint32_t) + len;
+	h->type = NetMsgHead::NetMsgType::MSG;
+
+	// message id
+	*(uint32_t*)(p + offset) = msgID;
+	offset += sizeof(uint32_t);
+
+	// data
+	if (len > 0) 
 	{
-		return;
+		memcpy(p + offset, data, len);
 	}
-	NetMsgHead* h = (NetMsgHead*)p;
-	h->len = encodelen;
-	h->type = NetMsgHead::NetMsgType::MSG;
-	h->id = msgID;
-
-	uint32_t sendlen = NetMsgHeadLen + encodelen;
-
-#else
-	uint32_t sendlen = NetMsgHeadLen + len;
-	char* p = (char*)fc_malloc(sendlen);
-	NetMsgHead* h = (NetMsgHead*)p;
-	h->len = len;
-	h->type = NetMsgHead::NetMsgType::MSG;
-
-	memcpy(p + NetMsgHeadLen, data, len);
-#endif
 
 	// 消息分片
-	if (sendlen > NET_UV_WRITE_MAX_LEN)
+	if (totalLen > NET_UV_WRITE_MAX_LEN)
 	{
 		int32_t curIndex = 0;
 		int32_t curArrIndex = 0;
 
-		while (sendlen > 0)
+		while (totalLen > 0)
 		{
-			if (sendlen < NET_UV_WRITE_MAX_LEN)
+			if (totalLen < NET_UV_WRITE_MAX_LEN)
 			{
 				char* tmp = p + curIndex;
-				m_sendCall(this, sessionID, tmp, sendlen);
+				m_sendCall(this, sessionID, tmp, totalLen);
 
 				curArrIndex++;
-				curIndex = curIndex + sendlen;
-				sendlen = 0;
+				curIndex = curIndex + totalLen;
+				totalLen = 0;
 			}
 			else
 			{
@@ -228,7 +200,7 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, uint32_t msgID, char* data, uint32_t
 				m_sendCall(this, sessionID, tmp, NET_UV_WRITE_MAX_LEN);
 
 				curArrIndex++;
-				sendlen = sendlen - NET_UV_WRITE_MAX_LEN;
+				totalLen = totalLen - NET_UV_WRITE_MAX_LEN;
 				curIndex = curIndex + NET_UV_WRITE_MAX_LEN;
 			}
 		}
@@ -236,7 +208,7 @@ void NetMsgMgr::sendMsg(uint32_t sessionID, uint32_t msgID, char* data, uint32_t
 	}
 	else
 	{
-		m_sendCall(this, sessionID, p, sendlen);
+		m_sendCall(this, sessionID, p, totalLen);
 		fc_free(p);
 	}
 }
@@ -269,11 +241,10 @@ void NetMsgMgr::updateFrame()
 			}
 			else
 			{
-				auto pMsg = (NetMsgHead*)fc_malloc(NetMsgHeadLen);
-				pMsg->len = 0;
-				pMsg->type = NetMsgHead::PING;
-				m_sendCall(this, it->sessionID, (char*)pMsg, NetMsgHeadLen);
-				fc_free(pMsg);
+				NetMsgHead msg;
+				msg.len = 0;
+				msg.type = NetMsgHead::PING;
+				m_sendCall(this, it->sessionID, (char*)&msg, sizeof(NetMsgHead));
 			}
 		}
 	}

@@ -98,8 +98,6 @@ set(NET_UV_UDP_SRC
 set(NET_UV_NET_MSG_MGR_SRC
     msg/NetMsgMgr.cpp
     msg/NetMsgMgr.h
-    msg/NetMsgUtils.cpp
-    msg/NetMsgUtils.h
 )
 
 set(NET_UV_SRC
