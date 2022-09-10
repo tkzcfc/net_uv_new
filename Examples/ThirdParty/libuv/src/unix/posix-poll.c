@@ -61,7 +61,7 @@ static void uv__pollfds_maybe_resize(uv_loop_t* loop) {
     return;
 
   n = loop->poll_fds_size ? loop->poll_fds_size * 2 : 64;
-  p = uv__realloc(loop->poll_fds, n * sizeof(*loop->poll_fds));
+  p = uv__reallocf(loop->poll_fds, n * sizeof(*loop->poll_fds));
   if (p == NULL)
     abort();
 
@@ -107,7 +107,7 @@ static void uv__pollfds_add(uv_loop_t* loop, uv__io_t* w) {
 static void uv__pollfds_del(uv_loop_t* loop, int fd) {
   size_t i;
   assert(!loop->poll_fds_iterating);
-  for (i = 0; i < loop->poll_fds_used; ++i) {
+  for (i = 0; i < loop->poll_fds_used;) {
     if (loop->poll_fds[i].fd == fd) {
       /* swap to last position and remove */
       --loop->poll_fds_used;
@@ -115,7 +115,17 @@ static void uv__pollfds_del(uv_loop_t* loop, int fd) {
       loop->poll_fds[loop->poll_fds_used].fd = -1;
       loop->poll_fds[loop->poll_fds_used].events = 0;
       loop->poll_fds[loop->poll_fds_used].revents = 0;
-      return;
+      /* This method is called with an fd of -1 to purge the invalidated fds,
+       * so we may possibly have multiples to remove.
+       */
+      if (-1 != fd)
+        return;
+    } else {
+      /* We must only increment the loop counter when the fds do not match.
+       * Otherwise, when we are purging an invalidated fd, the value just
+       * swapped here from the previous end of the array will be skipped.
+       */
+       ++i;
     }
   }
 }
@@ -134,6 +144,8 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
   int have_signals;
   struct pollfd* pe;
   int fd;
+  int user_timeout;
+  int reset_timeout;
 
   if (loop->nfds == 0) {
     assert(QUEUE_EMPTY(&loop->watcher_queue));
@@ -167,11 +179,25 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
   assert(timeout >= -1);
   time_base = loop->time;
 
+  if (uv__get_internal_fields(loop)->flags & UV_METRICS_IDLE_TIME) {
+    reset_timeout = 1;
+    user_timeout = timeout;
+    timeout = 0;
+  } else {
+    reset_timeout = 0;
+  }
+
   /* Loop calls to poll() and processing of results.  If we get some
    * results from poll() but they turn out not to be interesting to
    * our caller then we need to loop around and poll() again.
    */
   for (;;) {
+    /* Only need to set the provider_entry_time if timeout != 0. The function
+     * will return early if the loop isn't configured with UV_METRICS_IDLE_TIME.
+     */
+    if (timeout != 0)
+      uv__metrics_set_provider_entry_time(loop);
+
     if (pset != NULL)
       if (pthread_sigmask(SIG_BLOCK, pset, NULL))
         abort();
@@ -187,6 +213,15 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
     SAVE_ERRNO(uv__update_time(loop));
 
     if (nfds == 0) {
+      if (reset_timeout != 0) {
+        timeout = user_timeout;
+        reset_timeout = 0;
+        if (timeout == -1)
+          continue;
+        if (timeout > 0)
+          goto update_timeout;
+      }
+
       assert(timeout != -1);
       return;
     }
@@ -194,6 +229,11 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
     if (nfds == -1) {
       if (errno != EINTR)
         abort();
+
+      if (reset_timeout != 0) {
+        timeout = user_timeout;
+        reset_timeout = 0;
+      }
 
       if (timeout == -1)
         continue;
@@ -244,6 +284,7 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
         if (w == &loop->signal_io_watcher) {
           have_signals = 1;
         } else {
+          uv__metrics_update_idle_time(loop);
           w->cb(loop, w, pe->revents);
         }
 
@@ -251,8 +292,15 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
       }
     }
 
-    if (have_signals != 0)
+    if (reset_timeout != 0) {
+      timeout = user_timeout;
+      reset_timeout = 0;
+    }
+
+    if (have_signals != 0) {
+      uv__metrics_update_idle_time(loop);
       loop->signal_io_watcher.cb(loop, &loop->signal_io_watcher, POLLIN);
+    }
 
     loop->poll_fds_iterating = 0;
 
@@ -287,6 +335,8 @@ update_timeout:
  */
 void uv__platform_invalidate_fd(uv_loop_t* loop, int fd) {
   size_t i;
+
+  assert(fd >= 0);
 
   if (loop->poll_fds_iterating) {
     /* uv__io_poll is currently iterating.  Just invalidate fd.  */

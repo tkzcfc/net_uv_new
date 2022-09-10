@@ -47,15 +47,6 @@
 # define CP_INTR 4
 #endif
 
-static uv_mutex_t process_title_mutex;
-static uv_once_t process_title_mutex_once = UV_ONCE_INIT;
-static char *process_title;
-
-
-static void init_process_title_mutex_once(void) {
-  uv_mutex_init(&process_title_mutex);
-}
-
 
 int uv__platform_loop_init(uv_loop_t* loop) {
   return uv__kqueue_init(loop);
@@ -65,31 +56,6 @@ int uv__platform_loop_init(uv_loop_t* loop) {
 void uv__platform_loop_delete(uv_loop_t* loop) {
 }
 
-
-#ifdef __DragonFly__
-int uv_exepath(char* buffer, size_t* size) {
-  char abspath[PATH_MAX * 2 + 1];
-  ssize_t abspath_size;
-
-  if (buffer == NULL || size == NULL || *size == 0)
-    return UV_EINVAL;
-
-  abspath_size = readlink("/proc/curproc/file", abspath, sizeof(abspath));
-  if (abspath_size < 0)
-    return UV__ERR(errno);
-
-  assert(abspath_size > 0);
-  *size -= 1;
-
-  if (*size > abspath_size)
-    *size = abspath_size;
-
-  memcpy(buffer, abspath, *size);
-  buffer[*size] = '\0';
-
-  return 0;
-}
-#else
 int uv_exepath(char* buffer, size_t* size) {
   char abspath[PATH_MAX * 2 + 1];
   int mib[4];
@@ -104,7 +70,7 @@ int uv_exepath(char* buffer, size_t* size) {
   mib[3] = -1;
 
   abspath_size = sizeof abspath;
-  if (sysctl(mib, 4, abspath, &abspath_size, NULL, 0))
+  if (sysctl(mib, ARRAY_SIZE(mib), abspath, &abspath_size, NULL, 0))
     return UV__ERR(errno);
 
   assert(abspath_size > 0);
@@ -119,7 +85,6 @@ int uv_exepath(char* buffer, size_t* size) {
 
   return 0;
 }
-#endif
 
 uint64_t uv_get_free_memory(void) {
   int freecount;
@@ -139,10 +104,15 @@ uint64_t uv_get_total_memory(void) {
 
   size_t size = sizeof(info);
 
-  if (sysctl(which, 2, &info, &size, NULL, 0))
+  if (sysctl(which, ARRAY_SIZE(which), &info, &size, NULL, 0))
     return UV__ERR(errno);
 
   return (uint64_t) info;
+}
+
+
+uint64_t uv_get_constrained_memory(void) {
+  return 0;  /* Memory constraints are unknown. */
 }
 
 
@@ -151,83 +121,13 @@ void uv_loadavg(double avg[3]) {
   size_t size = sizeof(info);
   int which[] = {CTL_VM, VM_LOADAVG};
 
-  if (sysctl(which, 2, &info, &size, NULL, 0) < 0) return;
+  if (sysctl(which, ARRAY_SIZE(which), &info, &size, NULL, 0) < 0) return;
 
   avg[0] = (double) info.ldavg[0] / info.fscale;
   avg[1] = (double) info.ldavg[1] / info.fscale;
   avg[2] = (double) info.ldavg[2] / info.fscale;
 }
 
-
-char** uv_setup_args(int argc, char** argv) {
-  process_title = argc ? uv__strdup(argv[0]) : NULL;
-  return argv;
-}
-
-
-int uv_set_process_title(const char* title) {
-  int oid[4];
-  char* new_title;
-
-  new_title = uv__strdup(title);
-
-  uv_once(&process_title_mutex_once, init_process_title_mutex_once);
-  uv_mutex_lock(&process_title_mutex);
-
-  if (process_title == NULL) {
-    uv_mutex_unlock(&process_title_mutex);
-    return UV_ENOMEM;
-  }
-
-  uv__free(process_title);
-  process_title = new_title;
-
-  oid[0] = CTL_KERN;
-  oid[1] = KERN_PROC;
-  oid[2] = KERN_PROC_ARGS;
-  oid[3] = getpid();
-
-  sysctl(oid,
-         ARRAY_SIZE(oid),
-         NULL,
-         NULL,
-         process_title,
-         strlen(process_title) + 1);
-
-  uv_mutex_unlock(&process_title_mutex);
-
-  return 0;
-}
-
-
-int uv_get_process_title(char* buffer, size_t size) {
-  size_t len;
-
-  if (buffer == NULL || size == 0)
-    return UV_EINVAL;
-
-  uv_once(&process_title_mutex_once, init_process_title_mutex_once);
-  uv_mutex_lock(&process_title_mutex);
-
-  if (process_title) {
-    len = strlen(process_title) + 1;
-
-    if (size < len) {
-      uv_mutex_unlock(&process_title_mutex);
-      return UV_ENOBUFS;
-    }
-
-    memcpy(buffer, process_title, len);
-  } else {
-    len = 0;
-  }
-
-  uv_mutex_unlock(&process_title_mutex);
-
-  buffer[len] = '\0';
-
-  return 0;
-}
 
 int uv_resident_set_memory(size_t* rss) {
   struct kinfo_proc kinfo;
@@ -242,7 +142,7 @@ int uv_resident_set_memory(size_t* rss) {
 
   kinfo_size = sizeof(kinfo);
 
-  if (sysctl(mib, 4, &kinfo, &kinfo_size, NULL, 0))
+  if (sysctl(mib, ARRAY_SIZE(mib), &kinfo, &kinfo_size, NULL, 0))
     return UV__ERR(errno);
 
   page_size = getpagesize();
@@ -364,12 +264,41 @@ int uv_cpu_info(uv_cpu_info_t** cpu_infos, int* count) {
 }
 
 
-void uv_free_cpu_info(uv_cpu_info_t* cpu_infos, int count) {
-  int i;
+int uv__sendmmsg(int fd, struct uv__mmsghdr* mmsg, unsigned int vlen) {
+#if __FreeBSD__ >= 11 && !defined(__DragonFly__)
+  return sendmmsg(fd,
+                  (struct mmsghdr*) mmsg,
+                  vlen,
+                  0 /* flags */);
+#else
+  return errno = ENOSYS, -1;
+#endif
+}
 
-  for (i = 0; i < count; i++) {
-    uv__free(cpu_infos[i].model);
-  }
 
-  uv__free(cpu_infos);
+int uv__recvmmsg(int fd, struct uv__mmsghdr* mmsg, unsigned int vlen) {
+#if __FreeBSD__ >= 11 && !defined(__DragonFly__)
+  return recvmmsg(fd,
+                  (struct mmsghdr*) mmsg,
+                  vlen,
+                  0 /* flags */,
+                  NULL /* timeout */);
+#else
+  return errno = ENOSYS, -1;
+#endif
+}
+
+ssize_t
+uv__fs_copy_file_range(int fd_in,
+                       off_t* off_in,
+                       int fd_out,
+                       off_t* off_out,
+                       size_t len,
+                       unsigned int flags)
+{
+#if __FreeBSD__ >= 13 && !defined(__DragonFly__)
+	return copy_file_range(fd_in, off_in, fd_out, off_out, len, flags);
+#else
+	return errno = ENOSYS, -1;
+#endif
 }

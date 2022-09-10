@@ -40,15 +40,6 @@
 #include <unistd.h>
 #include <time.h>
 
-static uv_mutex_t process_title_mutex;
-static uv_once_t process_title_mutex_once = UV_ONCE_INIT;
-static char *process_title;
-
-
-static void init_process_title_mutex_once(void) {
-  uv_mutex_init(&process_title_mutex);
-}
-
 
 int uv__platform_loop_init(uv_loop_t* loop) {
   return uv__kqueue_init(loop);
@@ -64,7 +55,7 @@ void uv_loadavg(double avg[3]) {
   size_t size = sizeof(info);
   int which[] = {CTL_VM, VM_LOADAVG};
 
-  if (sysctl(which, 2, &info, &size, NULL, 0) == -1) return;
+  if (sysctl(which, ARRAY_SIZE(which), &info, &size, NULL, 0) == -1) return;
 
   avg[0] = (double) info.ldavg[0] / info.fscale;
   avg[1] = (double) info.ldavg[1] / info.fscale;
@@ -96,7 +87,8 @@ int uv_exepath(char* buffer, size_t* size) {
   /* Copy string from the intermediate buffer to outer one with appropriate
    * length.
    */
-  strlcpy(buffer, int_buf, *size);
+  /* TODO(bnoordhuis) Check uv__strscpy() return value. */
+  uv__strscpy(buffer, int_buf, *size);
 
   /* Set new size. */
   *size = strlen(buffer);
@@ -110,7 +102,7 @@ uint64_t uv_get_free_memory(void) {
   size_t size = sizeof(info);
   int which[] = {CTL_VM, VM_UVMEXP};
 
-  if (sysctl(which, 2, &info, &size, NULL, 0))
+  if (sysctl(which, ARRAY_SIZE(which), &info, &size, NULL, 0))
     return UV__ERR(errno);
 
   return (uint64_t) info.free * sysconf(_SC_PAGESIZE);
@@ -127,69 +119,15 @@ uint64_t uv_get_total_memory(void) {
 #endif
   size_t size = sizeof(info);
 
-  if (sysctl(which, 2, &info, &size, NULL, 0))
+  if (sysctl(which, ARRAY_SIZE(which), &info, &size, NULL, 0))
     return UV__ERR(errno);
 
   return (uint64_t) info;
 }
 
 
-char** uv_setup_args(int argc, char** argv) {
-  process_title = argc ? uv__strdup(argv[0]) : NULL;
-  return argv;
-}
-
-
-int uv_set_process_title(const char* title) {
-  char* new_title;
-
-  new_title = uv__strdup(title);
-
-  uv_once(&process_title_mutex_once, init_process_title_mutex_once);
-  uv_mutex_lock(&process_title_mutex);
-
-  if (process_title == NULL) {
-    uv_mutex_unlock(&process_title_mutex);
-    return UV_ENOMEM;
-  }
-
-  uv__free(process_title);
-  process_title = new_title;
-  setproctitle("%s", title);
-
-  uv_mutex_unlock(&process_title_mutex);
-
-  return 0;
-}
-
-
-int uv_get_process_title(char* buffer, size_t size) {
-  size_t len;
-
-  if (buffer == NULL || size == 0)
-    return UV_EINVAL;
-
-  uv_once(&process_title_mutex_once, init_process_title_mutex_once);
-  uv_mutex_lock(&process_title_mutex);
-
-  if (process_title) {
-    len = strlen(process_title) + 1;
-
-    if (size < len) {
-      uv_mutex_unlock(&process_title_mutex);
-      return UV_ENOBUFS;
-    }
-
-    memcpy(buffer, process_title, len);
-  } else {
-    len = 0;
-  }
-
-  uv_mutex_unlock(&process_title_mutex);
-
-  buffer[len] = '\0';
-
-  return 0;
+uint64_t uv_get_constrained_memory(void) {
+  return 0;  /* Memory constraints are unknown. */
 }
 
 
@@ -229,7 +167,7 @@ int uv_uptime(double* uptime) {
   size_t size = sizeof(info);
   static int which[] = {CTL_KERN, KERN_BOOTTIME};
 
-  if (sysctl(which, 2, &info, &size, NULL, 0))
+  if (sysctl(which, ARRAY_SIZE(which), &info, &size, NULL, 0))
     return UV__ERR(errno);
 
   now = time(NULL);
@@ -297,13 +235,25 @@ int uv_cpu_info(uv_cpu_info_t** cpu_infos, int* count) {
   return 0;
 }
 
+int uv__random_sysctl(void* buf, size_t len) {
+  static int name[] = {CTL_KERN, KERN_ARND};
+  size_t count, req;
+  unsigned char* p;
 
-void uv_free_cpu_info(uv_cpu_info_t* cpu_infos, int count) {
-  int i;
+  p = buf;
+  while (len) {
+    req = len < 32 ? len : 32;
+    count = req;
 
-  for (i = 0; i < count; i++) {
-    uv__free(cpu_infos[i].model);
+    if (sysctl(name, ARRAY_SIZE(name), p, &count, NULL, 0) == -1)
+      return UV__ERR(errno);
+
+    if (count != req)
+      return UV_EIO;  /* Can't happen. */
+
+    p += count;
+    len -= count;
   }
 
-  uv__free(cpu_infos);
+  return 0;
 }

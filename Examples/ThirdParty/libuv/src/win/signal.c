@@ -39,21 +39,26 @@ int uv__signal_start(uv_signal_t* handle,
                      int signum,
                      int oneshot);
 
-void uv_signals_init(void) {
+void uv__signals_init(void) {
   InitializeCriticalSection(&uv__signal_lock);
   if (!SetConsoleCtrlHandler(uv__signal_control_handler, TRUE))
     abort();
 }
 
 
+void uv__signal_cleanup(void) {
+  /* TODO(bnoordhuis) Undo effects of uv_signal_init()? */
+}
+
+
 static int uv__signal_compare(uv_signal_t* w1, uv_signal_t* w2) {
-  /* Compare signums first so all watchers with the same signnum end up */
-  /* adjacent. */
+  /* Compare signums first so all watchers with the same signnum end up
+   * adjacent. */
   if (w1->signum < w2->signum) return -1;
   if (w1->signum > w2->signum) return 1;
 
-  /* Sort by loop pointer, so we can easily look up the first item after */
-  /* { .signum = x, .loop = NULL } */
+  /* Sort by loop pointer, so we can easily look up the first item after
+   * { .signum = x, .loop = NULL }. */
   if ((uintptr_t) w1->loop < (uintptr_t) w2->loop) return -1;
   if ((uintptr_t) w1->loop > (uintptr_t) w2->loop) return 1;
 
@@ -90,7 +95,7 @@ int uv__signal_dispatch(int signum) {
     unsigned long previous = InterlockedExchange(
             (volatile LONG*) &handle->pending_signum, signum);
 
-    if (handle->flags & UV__SIGNAL_ONE_SHOT_DISPATCHED)
+    if (handle->flags & UV_SIGNAL_ONE_SHOT_DISPATCHED)
       continue;
 
     if (!previous) {
@@ -98,8 +103,8 @@ int uv__signal_dispatch(int signum) {
     }
 
     dispatched = 1;
-    if (handle->flags & UV__SIGNAL_ONE_SHOT)
-      handle->flags |= UV__SIGNAL_ONE_SHOT_DISPATCHED;
+    if (handle->flags & UV_SIGNAL_ONE_SHOT)
+      handle->flags |= UV_SIGNAL_ONE_SHOT_DISPATCHED;
   }
 
   LeaveCriticalSection(&uv__signal_lock);
@@ -118,10 +123,10 @@ static BOOL WINAPI uv__signal_control_handler(DWORD type) {
 
     case CTRL_CLOSE_EVENT:
       if (uv__signal_dispatch(SIGHUP)) {
-        /* Windows will terminate the process after the control handler */
-        /* returns. After that it will just terminate our process. Therefore */
-        /* block the signal handler so the main loop has some time to pick */
-        /* up the signal and do something for a few seconds. */
+        /* Windows will terminate the process after the control handler
+         * returns. After that it will just terminate our process. Therefore
+         * block the signal handler so the main loop has some time to pick up
+         * the signal and do something for a few seconds. */
         Sleep(INFINITE);
         return TRUE;
       }
@@ -129,8 +134,8 @@ static BOOL WINAPI uv__signal_control_handler(DWORD type) {
 
     case CTRL_LOGOFF_EVENT:
     case CTRL_SHUTDOWN_EVENT:
-      /* These signals are only sent to services. Services have their own */
-      /* notification mechanism, so there's no point in handling these. */
+      /* These signals are only sent to services. Services have their own
+       * notification mechanism, so there's no point in handling these. */
 
     default:
       /* We don't handle these. */
@@ -190,13 +195,13 @@ int uv__signal_start(uv_signal_t* handle,
                             int signum,
                             int oneshot) {
   /* Test for invalid signal values. */
-  if (signum != SIGWINCH && (signum <= 0 || signum >= NSIG))
+  if (signum <= 0 || signum >= NSIG)
     return UV_EINVAL;
 
-  /* Short circuit: if the signal watcher is already watching {signum} don't */
-  /* go through the process of deregistering and registering the handler. */
-  /* Additionally, this avoids pending signals getting lost in the (small) */
-  /* time frame that handle->signum == 0. */
+  /* Short circuit: if the signal watcher is already watching {signum} don't go
+   * through the process of deregistering and registering the handler.
+   * Additionally, this avoids pending signals getting lost in the (small) time
+   * frame that handle->signum == 0. */
   if (signum == handle->signum) {
     handle->signal_cb = signal_cb;
     return 0;
@@ -213,7 +218,7 @@ int uv__signal_start(uv_signal_t* handle,
 
   handle->signum = signum;
   if (oneshot)
-    handle->flags |= UV__SIGNAL_ONE_SHOT;
+    handle->flags |= UV_SIGNAL_ONE_SHOT;
 
   RB_INSERT(uv_signal_tree_s, &uv__signal_tree, handle);
 
@@ -226,7 +231,7 @@ int uv__signal_start(uv_signal_t* handle,
 }
 
 
-void uv_process_signal_req(uv_loop_t* loop, uv_signal_t* handle,
+void uv__process_signal_req(uv_loop_t* loop, uv_signal_t* handle,
     uv_req_t* req) {
   long dispatched_signum;
 
@@ -237,35 +242,35 @@ void uv_process_signal_req(uv_loop_t* loop, uv_signal_t* handle,
           (volatile LONG*) &handle->pending_signum, 0);
   assert(dispatched_signum != 0);
 
-  /* Check if the pending signal equals the signum that we are watching for. */
-  /* These can get out of sync when the handler is stopped and restarted */
-  /* while the signal_req is pending. */
+  /* Check if the pending signal equals the signum that we are watching for.
+   * These can get out of sync when the handler is stopped and restarted while
+   * the signal_req is pending. */
   if (dispatched_signum == handle->signum)
     handle->signal_cb(handle, dispatched_signum);
 
-  if (handle->flags & UV__SIGNAL_ONE_SHOT)
+  if (handle->flags & UV_SIGNAL_ONE_SHOT)
     uv_signal_stop(handle);
 
-  if (handle->flags & UV__HANDLE_CLOSING) {
+  if (handle->flags & UV_HANDLE_CLOSING) {
     /* When it is closing, it must be stopped at this point. */
     assert(handle->signum == 0);
-    uv_want_endgame(loop, (uv_handle_t*) handle);
+    uv__want_endgame(loop, (uv_handle_t*) handle);
   }
 }
 
 
-void uv_signal_close(uv_loop_t* loop, uv_signal_t* handle) {
+void uv__signal_close(uv_loop_t* loop, uv_signal_t* handle) {
   uv_signal_stop(handle);
   uv__handle_closing(handle);
 
   if (handle->pending_signum == 0) {
-    uv_want_endgame(loop, (uv_handle_t*) handle);
+    uv__want_endgame(loop, (uv_handle_t*) handle);
   }
 }
 
 
-void uv_signal_endgame(uv_loop_t* loop, uv_signal_t* handle) {
-  assert(handle->flags & UV__HANDLE_CLOSING);
+void uv__signal_endgame(uv_loop_t* loop, uv_signal_t* handle) {
+  assert(handle->flags & UV_HANDLE_CLOSING);
   assert(!(handle->flags & UV_HANDLE_CLOSED));
 
   assert(handle->signum == 0);

@@ -19,15 +19,20 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef UV_MVS_H
-#define UV_MVS_H
+#include "strscpy.h"
+#include <limits.h>  /* SSIZE_MAX */
 
-#define UV_PLATFORM_SEM_T int
+ssize_t uv__strscpy(char* d, const char* s, size_t n) {
+  size_t i;
 
-#define UV_PLATFORM_LOOP_FIELDS                                               \
-  void* ep;                                                                   \
+  for (i = 0; i < n; i++)
+    if ('\0' == (d[i] = s[i]))
+      return i > SSIZE_MAX ? UV_E2BIG : (ssize_t) i;
 
-#define UV_PLATFORM_FS_EVENT_FIELDS                                           \
-  char rfis_rftok[8];                                                         \
+  if (i == 0)
+    return 0;
 
-#endif /* UV_MVS_H */
+  d[--i] = '\0';
+
+  return UV_E2BIG;
+}

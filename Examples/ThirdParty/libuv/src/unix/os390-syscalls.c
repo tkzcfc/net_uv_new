@@ -23,17 +23,10 @@
 #include "os390-syscalls.h"
 #include <errno.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <search.h>
 #include <termios.h>
 #include <sys/msg.h>
 
-#define CW_CONDVAR 32
-
-#pragma linkage(BPX4CTW, OS)
-#pragma linkage(BPX1CTW, OS)
-
-static int number_of_epolls;
 static QUEUE global_epoll_queue;
 static uv_mutex_t global_epoll_lock;
 static uv_once_t once = UV_ONCE_INIT;
@@ -43,6 +36,7 @@ int scandir(const char* maindir, struct dirent*** namelist,
             int (*compar)(const struct dirent**,
             const struct dirent **)) {
   struct dirent** nl;
+  struct dirent** nl_copy;
   struct dirent* dirent;
   unsigned count;
   size_t allocated;
@@ -55,26 +49,24 @@ int scandir(const char* maindir, struct dirent*** namelist,
   if (!mdir)
     return -1;
 
-  while (1) {
+  for (;;) {
     dirent = readdir(mdir);
     if (!dirent)
       break;
     if (!filter || filter(dirent)) {
       struct dirent* copy;
       copy = uv__malloc(sizeof(*copy));
-      if (!copy) {
-        while (count) {
-          dirent = nl[--count];
-          uv__free(dirent);
-        }
-        uv__free(nl);
-        closedir(mdir);
-        errno = ENOMEM;
-        return -1;
-      }
+      if (!copy)
+        goto error;
       memcpy(copy, dirent, sizeof(*copy));
 
-      nl = uv__realloc(nl, sizeof(*copy) * (count + 1));
+      nl_copy = uv__realloc(nl, sizeof(*copy) * (count + 1));
+      if (nl_copy == NULL) {
+        uv__free(copy);
+        goto error;
+      }
+
+      nl = nl_copy;
       nl[count++] = copy;
     }
   }
@@ -86,6 +78,16 @@ int scandir(const char* maindir, struct dirent*** namelist,
 
   *namelist = nl;
   return count;
+
+error:
+  while (count > 0) {
+    dirent = nl[--count];
+    uv__free(dirent);
+  }
+  uv__free(nl);
+  closedir(mdir);
+  errno = ENOMEM;
+  return -1;
 }
 
 
@@ -119,7 +121,7 @@ static void maybe_resize(uv__os390_epoll* lst, unsigned int len) {
   }
 
   newsize = next_power_of_two(len);
-  newlst = uv__realloc(lst->items, newsize * sizeof(lst->items[0]));
+  newlst = uv__reallocf(lst->items, newsize * sizeof(lst->items[0]));
 
   if (newlst == NULL)
     abort();
@@ -134,6 +136,11 @@ static void maybe_resize(uv__os390_epoll* lst, unsigned int len) {
 }
 
 
+void uv__os390_cleanup(void) {
+  msgctl(uv_backend_fd(uv_default_loop()), IPC_RMID, NULL);
+}
+
+
 static void init_message_queue(uv__os390_epoll* lst) {
   struct {
     long int header;
@@ -141,7 +148,7 @@ static void init_message_queue(uv__os390_epoll* lst) {
   } msg;
 
   /* initialize message queue */
-  lst->msg_queue = msgget(IPC_PRIVATE, 0622 | IPC_CREAT);
+  lst->msg_queue = msgget(IPC_PRIVATE, 0600 | IPC_CREAT);
   if (lst->msg_queue == -1)
     abort();
 
@@ -215,6 +222,7 @@ uv__os390_epoll* epoll_create1(int flags) {
     maybe_resize(lst, 1);
     lst->items[lst->size - 1].fd = lst->msg_queue;
     lst->items[lst->size - 1].events = POLLIN;
+    lst->items[lst->size - 1].revents = 0;
     uv_once(&once, epoll_init);
     uv_mutex_lock(&global_epoll_lock);
     QUEUE_INSERT_TAIL(&global_epoll_queue, &lst->member);
@@ -252,13 +260,15 @@ int epoll_ctl(uv__os390_epoll* lst,
     }
     lst->items[fd].fd = fd;
     lst->items[fd].events = event->events;
+    lst->items[fd].revents = 0;
   } else if (op == EPOLL_CTL_MOD) {
-    if (fd >= lst->size || lst->items[fd].fd == -1) {
+    if (fd >= lst->size - 1 || lst->items[fd].fd == -1) {
       uv_mutex_unlock(&global_epoll_lock);
       errno = ENOENT;
       return -1;
     }
     lst->items[fd].events = event->events;
+    lst->items[fd].revents = 0;
   } else
     abort();
 
@@ -266,36 +276,78 @@ int epoll_ctl(uv__os390_epoll* lst,
   return 0;
 }
 
+#define EP_MAX_PFDS (ULONG_MAX / sizeof(struct pollfd))
+#define EP_MAX_EVENTS (INT_MAX / sizeof(struct epoll_event))
 
 int epoll_wait(uv__os390_epoll* lst, struct epoll_event* events,
                int maxevents, int timeout) {
   nmsgsfds_t size;
   struct pollfd* pfds;
   int pollret;
+  int pollfdret;
+  int pollmsgret;
   int reventcount;
+  int nevents;
+  struct pollfd msg_fd;
+  int i;
 
-  size = _SET_FDS_MSGS(size, 1, lst->size - 1);
+  if (!lst || !lst->items || !events) {
+    errno = EFAULT;
+    return -1;
+  }
+
+  if (lst->size > EP_MAX_PFDS) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (maxevents <= 0 || maxevents > EP_MAX_EVENTS) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  assert(lst->size > 0);
+  _SET_FDS_MSGS(size, 1, lst->size - 1);
   pfds = lst->items;
   pollret = poll(pfds, size, timeout);
   if (pollret <= 0)
     return pollret;
 
-  pollret = _NFDS(pollret) + _NMSGS(pollret);
+  pollfdret = _NFDS(pollret);
+  pollmsgret = _NMSGS(pollret);
 
   reventcount = 0;
-  for (int i = 0; 
-       i < lst->size && i < maxevents && reventcount < pollret; ++i) {
+  nevents = 0;
+  msg_fd = pfds[lst->size - 1]; /* message queue is always last entry */
+  maxevents = maxevents - pollmsgret; /* allow spot for message queue */
+  for (i = 0;
+       i < lst->size - 1 &&
+       nevents < maxevents &&
+       reventcount < pollfdret; ++i) {
     struct epoll_event ev;
+    struct pollfd* pfd;
 
-    if (pfds[i].fd == -1 || pfds[i].revents == 0)
+    pfd = &pfds[i];
+    if (pfd->fd == -1 || pfd->revents == 0)
       continue;
 
-    ev.fd = pfds[i].fd;
-    ev.events = pfds[i].revents;
-    events[reventcount++] = ev;
+    ev.fd = pfd->fd;
+    ev.events = pfd->revents;
+    ev.is_msg = 0;
+
+    reventcount++;
+    events[nevents++] = ev;
   }
 
-  return reventcount;
+  if (pollmsgret > 0 && msg_fd.revents != 0 && msg_fd.fd != -1) {
+    struct epoll_event ev;
+    ev.fd = msg_fd.fd;
+    ev.events = msg_fd.revents;
+    ev.is_msg = 1;
+    events[nevents++] = ev;
+  }
+
+  return nevents;
 }
 
 
@@ -327,37 +379,6 @@ void epoll_queue_close(uv__os390_epoll* lst) {
   lst->msg_queue = -1;
   uv__free(lst->items);
   lst->items = NULL;
-}
-
-
-int nanosleep(const struct timespec* req, struct timespec* rem) {
-  unsigned nano;
-  unsigned seconds;
-  unsigned events;
-  unsigned secrem;
-  unsigned nanorem;
-  int rv;
-  int rc;
-  int rsn;
-
-  nano = (int)req->tv_nsec;
-  seconds = req->tv_sec;
-  events = CW_CONDVAR;
-
-#if defined(_LP64)
-  BPX4CTW(&seconds, &nano, &events, &secrem, &nanorem, &rv, &rc, &rsn);
-#else
-  BPX1CTW(&seconds, &nano, &events, &secrem, &nanorem, &rv, &rc, &rsn);
-#endif
-
-  assert(rv == -1 && errno == EAGAIN);
-
-  if(rem != NULL) {
-    rem->tv_nsec = nanorem;
-    rem->tv_sec = secrem;
-  }
-
-  return 0;
 }
 
 
@@ -490,10 +511,26 @@ ssize_t os390_readlink(const char* path, char* buf, size_t len) {
 }
 
 
-size_t strnlen(const char* str, size_t maxlen) {
-  void* p = memchr(str, 0, maxlen);
-  if (p == NULL)
-    return maxlen;
-  else
-    return p - str;
+int sem_init(UV_PLATFORM_SEM_T* semid, int pshared, unsigned int value) {
+  UNREACHABLE();
+}
+
+
+int sem_destroy(UV_PLATFORM_SEM_T* semid) {
+  UNREACHABLE();
+}
+
+
+int sem_post(UV_PLATFORM_SEM_T* semid) {
+  UNREACHABLE();
+}
+
+
+int sem_trywait(UV_PLATFORM_SEM_T* semid) {
+  UNREACHABLE();
+}
+
+
+int sem_wait(UV_PLATFORM_SEM_T* semid) {
+  UNREACHABLE();
 }

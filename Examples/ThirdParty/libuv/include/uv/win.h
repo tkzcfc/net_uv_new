@@ -23,17 +23,11 @@
 # define _WIN32_WINNT   0x0600
 #endif
 
-//添加头文件
-#include <BaseTsd.h>
-
-#if !defined(_SSIZE_T_) && !defined(_SSIZE_T_DEFINED) && !defined(HAVE_SSIZE_T)
-//error C2371: “ssize_t”: 重定义；不同的基类型
-//typedef intptr_t ssize_t;
-//改为SSIZE_T 与cocos/base/CCConsole.h中的ssize_t定义一样
-typedef SSIZE_T ssize_t;
+#if !defined(_SSIZE_T_) && !defined(_SSIZE_T_DEFINED)
+typedef intptr_t ssize_t;
+# define SSIZE_MAX INTPTR_MAX
 # define _SSIZE_T_
 # define _SSIZE_T_DEFINED
-# define HAVE_SSIZE_T
 #endif
 
 #include <winsock2.h>
@@ -51,7 +45,14 @@ typedef struct pollfd {
 #endif
 
 #include <mswsock.h>
+// Disable the typedef in mstcpip.h of MinGW.
+#define _TCP_INITIAL_RTO_PARAMETERS _TCP_INITIAL_RTO_PARAMETERS__AVOID
+#define TCP_INITIAL_RTO_PARAMETERS TCP_INITIAL_RTO_PARAMETERS__AVOID
+#define PTCP_INITIAL_RTO_PARAMETERS PTCP_INITIAL_RTO_PARAMETERS__AVOID
 #include <ws2tcpip.h>
+#undef _TCP_INITIAL_RTO_PARAMETERS
+#undef TCP_INITIAL_RTO_PARAMETERS
+#undef PTCP_INITIAL_RTO_PARAMETERS
 #include <windows.h>
 
 #include <process.h>
@@ -60,13 +61,13 @@ typedef struct pollfd {
 #include <sys/stat.h>
 
 #if defined(_MSC_VER) && _MSC_VER < 1600
-# include "stdint-msvc2008.h"
+# include "uv/stdint-msvc2008.h"
 #else
 # include <stdint.h>
 #endif
 
-#include "tree.h"
-#include "uv-threadpool.h"
+#include "uv/tree.h"
+#include "uv/threadpool.h"
 
 #define MAX_PIPENAME_LEN 256
 
@@ -93,8 +94,16 @@ typedef struct pollfd {
 #define SIGKILL               9
 #define SIGWINCH             28
 
-/* The CRT defines SIGABRT_COMPAT as 6, which equals SIGABRT on many */
-/* unix-like platforms. However MinGW doesn't define it, so we do. */
+/* Redefine NSIG to take SIGWINCH into consideration */
+#if defined(NSIG) && NSIG <= SIGWINCH
+# undef NSIG
+#endif
+#ifndef NSIG
+# define NSIG SIGWINCH + 1
+#endif
+
+/* The CRT defines SIGABRT_COMPAT as 6, which equals SIGABRT on many unix-like
+ * platforms. However MinGW doesn't define it, so we do. */
 #ifndef SIGABRT_COMPAT
 # define SIGABRT_COMPAT       6
 #endif
@@ -214,7 +223,7 @@ typedef struct _AFD_POLL_INFO {
   AFD_POLL_HANDLE_INFO Handles[1];
 } AFD_POLL_INFO, *PAFD_POLL_INFO;
 
-#define UV_MSAFD_PROVIDER_COUNT 3
+#define UV_MSAFD_PROVIDER_COUNT 4
 
 
 /**
@@ -251,24 +260,17 @@ typedef union {
     CRITICAL_SECTION waiters_count_lock;
     HANDLE signal_event;
     HANDLE broadcast_event;
-  } fallback;
+  } unused_; /* TODO: retained for ABI compatibility; remove me in v2.x. */
 } uv_cond_t;
 
-typedef union {
-  struct {
-    unsigned int num_readers_;
-    CRITICAL_SECTION num_readers_lock_;
-    HANDLE write_semaphore_;
-  } state_;
-  /* TODO: remove me in v2.x. */
-  struct {
-    SRWLOCK unused_;
-  } unused1_;
-  /* TODO: remove me in v2.x. */
-  struct {
-    uv_mutex_t unused1_;
-    uv_mutex_t unused2_;
-  } unused2_;
+typedef struct {
+  SRWLOCK read_write_lock_;
+  /* TODO: retained for ABI compatibility; remove me in v2.x */
+#ifdef _WIN64
+  unsigned char padding_[72];
+#else
+  unsigned char padding_[44];
+#endif
 } uv_rwlock_t;
 
 typedef struct {
@@ -299,6 +301,11 @@ typedef struct uv__dirent_s {
   char d_name[1];
 } uv__dirent_t;
 
+#define UV_DIR_PRIVATE_FIELDS \
+  HANDLE dir_handle;          \
+  WIN32_FIND_DATAW find_data; \
+  BOOL need_find_call;
+
 #define HAVE_DIRENT_TYPES
 #define UV__DT_DIR     UV_DIRENT_DIR
 #define UV__DT_FILE    UV_DIRENT_FILE
@@ -315,8 +322,6 @@ typedef struct {
   char* errmsg;
 } uv_lib_t;
 
-RB_HEAD(uv_timer_tree_s, uv_timer_s);
-
 #define UV_LOOP_PRIVATE_FIELDS                                                \
     /* The loop's I/O completion port */                                      \
   HANDLE iocp;                                                                \
@@ -328,8 +333,8 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
   uv_req_t* pending_reqs_tail;                                                \
   /* Head of a single-linked list of closed handles */                        \
   uv_handle_t* endgame_handles;                                               \
-  /* The head of the timers tree */                                           \
-  struct uv_timer_tree_s timers;                                              \
+  /* TODO(bnoordhuis) Stop heap-allocating |timer_heap| in libuv v2.x. */     \
+  void* timer_heap;                                                           \
     /* Lists of active loop (prepare / check / idle) watchers */              \
   uv_prepare_t* prepare_handles;                                              \
   uv_check_t* check_handles;                                                  \
@@ -372,13 +377,19 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
       OVERLAPPED overlapped;                                                  \
       size_t queued_bytes;                                                    \
     } io;                                                                     \
+    /* in v2, we can move these to the UV_CONNECT_PRIVATE_FIELDS */           \
+    struct {                                                                  \
+      ULONG_PTR result; /* overlapped.Internal is reused to hold the result */\
+      HANDLE pipeHandle;                                                      \
+      DWORD duplex_flags;                                                     \
+    } connect;                                                                \
   } u;                                                                        \
   struct uv_req_s* next_req;
 
-#define UV_WRITE_PRIVATE_FIELDS                                               \
-  int ipc_header;                                                             \
-  uv_buf_t write_buffer;                                                      \
-  HANDLE event_handle;                                                        \
+#define UV_WRITE_PRIVATE_FIELDS \
+  int coalesced;                \
+  uv_buf_t write_buffer;        \
+  HANDLE event_handle;          \
   HANDLE wait_handle;
 
 #define UV_CONNECT_PRIVATE_FIELDS                                             \
@@ -466,16 +477,17 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
 
 #define uv_pipe_connection_fields                                             \
   uv_timer_t* eof_timer;                                                      \
-  uv_write_t ipc_header_write_req;                                            \
-  int ipc_pid;                                                                \
-  uint64_t remaining_ipc_rawdata_bytes;                                       \
-  struct {                                                                    \
-    void* queue[2];                                                           \
-    int queue_len;                                                            \
-  } pending_ipc_info;                                                         \
+  uv_write_t dummy; /* TODO: retained for ABI compat; remove this in v2.x. */ \
+  DWORD ipc_remote_pid;                                                       \
+  union {                                                                     \
+    uint32_t payload_remaining;                                               \
+    uint64_t dummy; /* TODO: retained for ABI compat; remove this in v2.x. */ \
+  } ipc_data_frame;                                                           \
+  void* ipc_xfer_queue[2];                                                    \
+  int ipc_xfer_queue_length;                                                  \
   uv_write_t* non_overlapped_writes_tail;                                     \
-  uv_mutex_t readfile_mutex;                                                  \
-  volatile HANDLE readfile_thread;
+  CRITICAL_SECTION readfile_thread_lock;                                      \
+  volatile HANDLE readfile_thread_handle;
 
 #define UV_PIPE_PRIVATE_FIELDS                                                \
   HANDLE handle;                                                              \
@@ -485,8 +497,8 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
     struct { uv_pipe_connection_fields } conn;                                \
   } pipe;
 
-/* TODO: put the parser states in an union - TTY handles are always */
-/* half-duplex so read-state can safely overlap write-state. */
+/* TODO: put the parser states in an union - TTY handles are always half-duplex
+ * so read-state can safely overlap write-state. */
 #define UV_TTY_PRIVATE_FIELDS                                                 \
   HANDLE handle;                                                              \
   union {                                                                     \
@@ -511,7 +523,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
       /* eol conversion state */                                              \
       unsigned char previous_eol;                                             \
       /* ansi parser state */                                                 \
-      unsigned char ansi_parser_state;                                        \
+      unsigned short ansi_parser_state;                                       \
       unsigned char ansi_csi_argc;                                            \
       unsigned short ansi_csi_argv[4];                                        \
       COORD saved_position;                                                   \
@@ -535,8 +547,9 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
   unsigned char events;
 
 #define UV_TIMER_PRIVATE_FIELDS                                               \
-  RB_ENTRY(uv_timer_s) tree_entry;                                            \
-  uint64_t due;                                                               \
+  void* heap_node[3];                                                         \
+  int unused;                                                                 \
+  uint64_t timeout;                                                           \
   uint64_t repeat;                                                            \
   uint64_t start_id;                                                          \
   uv_timer_cb timer_cb;
@@ -661,6 +674,7 @@ RB_HEAD(uv_timer_tree_s, uv_timer_s);
 #define UV_FS_O_APPEND       _O_APPEND
 #define UV_FS_O_CREAT        _O_CREAT
 #define UV_FS_O_EXCL         _O_EXCL
+#define UV_FS_O_FILEMAP      0x20000000
 #define UV_FS_O_RANDOM       _O_RANDOM
 #define UV_FS_O_RDONLY       _O_RDONLY
 #define UV_FS_O_RDWR         _O_RDWR

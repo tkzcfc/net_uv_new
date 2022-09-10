@@ -51,7 +51,9 @@ int uv_pipe_bind(uv_pipe_t* handle, const char* name) {
   /* Already bound? */
   if (uv__stream_fd(handle) >= 0)
     return UV_EINVAL;
-
+  if (uv__is_closing(handle)) {
+    return UV_EINVAL;
+  }
   /* Make a copy of the file name, it outlives this function's scope. */
   pipe_fname = uv__strdup(name);
   if (pipe_fname == NULL)
@@ -66,8 +68,7 @@ int uv_pipe_bind(uv_pipe_t* handle, const char* name) {
   sockfd = err;
 
   memset(&saddr, 0, sizeof saddr);
-  strncpy(saddr.sun_path, pipe_fname, sizeof(saddr.sun_path) - 1);
-  saddr.sun_path[sizeof(saddr.sun_path) - 1] = '\0';
+  uv__strscpy(saddr.sun_path, pipe_fname, sizeof(saddr.sun_path));
   saddr.sun_family = AF_UNIX;
 
   if (bind(sockfd, (struct sockaddr*)&saddr, sizeof saddr)) {
@@ -92,12 +93,16 @@ err_socket:
 }
 
 
-int uv_pipe_listen(uv_pipe_t* handle, int backlog, uv_connection_cb cb) {
+int uv__pipe_listen(uv_pipe_t* handle, int backlog, uv_connection_cb cb) {
   if (uv__stream_fd(handle) == -1)
     return UV_EINVAL;
 
-#if defined(__MVS__)
+  if (handle->ipc)
+    return UV_EINVAL;
+
+#if defined(__MVS__) || defined(__PASE__)
   /* On zOS, backlog=0 has undefined behaviour */
+  /* On IBMi PASE, backlog=0 leads to "Connection refused" error */
   if (backlog == 0)
     backlog = 1;
   else if (backlog < 0)
@@ -132,7 +137,20 @@ void uv__pipe_close(uv_pipe_t* handle) {
 
 
 int uv_pipe_open(uv_pipe_t* handle, uv_file fd) {
+  int flags;
+  int mode;
   int err;
+  flags = 0;
+
+  if (uv__fd_exists(handle->loop, fd))
+    return UV_EEXIST;
+
+  do
+    mode = fcntl(fd, F_GETFL);
+  while (mode == -1 && errno == EINTR);
+
+  if (mode == -1)
+    return UV__ERR(errno); /* according to docs, must be EBADF */
 
   err = uv__nonblock(fd, 1);
   if (err)
@@ -144,9 +162,13 @@ int uv_pipe_open(uv_pipe_t* handle, uv_file fd) {
     return err;
 #endif /* defined(__APPLE__) */
 
-  return uv__stream_open((uv_stream_t*)handle,
-                         fd,
-                         UV_STREAM_READABLE | UV_STREAM_WRITABLE);
+  mode &= O_ACCMODE;
+  if (mode != O_WRONLY)
+    flags |= UV_HANDLE_READABLE;
+  if (mode != O_RDONLY)
+    flags |= UV_HANDLE_WRITABLE;
+
+  return uv__stream_open((uv_stream_t*)handle, fd, flags);
 }
 
 
@@ -169,8 +191,7 @@ void uv_pipe_connect(uv_connect_t* req,
   }
 
   memset(&saddr, 0, sizeof saddr);
-  strncpy(saddr.sun_path, name, sizeof(saddr.sun_path) - 1);
-  saddr.sun_path[sizeof(saddr.sun_path) - 1] = '\0';
+  uv__strscpy(saddr.sun_path, name, sizeof(saddr.sun_path));
   saddr.sun_family = AF_UNIX;
 
   do {
@@ -196,11 +217,11 @@ void uv_pipe_connect(uv_connect_t* req,
   if (new_sock) {
     err = uv__stream_open((uv_stream_t*)handle,
                           uv__stream_fd(handle),
-                          UV_STREAM_READABLE | UV_STREAM_WRITABLE);
+                          UV_HANDLE_READABLE | UV_HANDLE_WRITABLE);
   }
 
   if (err == 0)
-    uv__io_start(handle->loop, &handle->io_watcher, POLLIN | POLLOUT);
+    uv__io_start(handle->loop, &handle->io_watcher, POLLOUT);
 
 out:
   handle->delayed_error = err;
@@ -218,9 +239,6 @@ out:
 }
 
 
-typedef int (*uv__peersockfunc)(int, struct sockaddr*, socklen_t*);
-
-
 static int uv__pipe_getsockpeername(const uv_pipe_t* handle,
                                     uv__peersockfunc func,
                                     char* buffer,
@@ -231,10 +249,13 @@ static int uv__pipe_getsockpeername(const uv_pipe_t* handle,
 
   addrlen = sizeof(sa);
   memset(&sa, 0, addrlen);
-  err = func(uv__stream_fd(handle), (struct sockaddr*) &sa, &addrlen);
+  err = uv__getsockpeername((const uv_handle_t*) handle,
+                            func,
+                            (struct sockaddr*) &sa,
+                            (int*) &addrlen);
   if (err < 0) {
     *size = 0;
-    return UV__ERR(errno);
+    return err;
   }
 
 #if defined(__linux__)
@@ -246,7 +267,7 @@ static int uv__pipe_getsockpeername(const uv_pipe_t* handle,
     addrlen = strlen(sa.sun_path);
 
 
-  if (addrlen >= *size) {
+  if ((size_t)addrlen >= *size) {
     *size = addrlen + 1;
     return UV_ENOBUFS;
   }
@@ -300,7 +321,7 @@ uv_handle_type uv_pipe_pending_type(uv_pipe_t* handle) {
   if (handle->accepted_fd == -1)
     return UV_UNKNOWN_HANDLE;
   else
-    return uv__handle_type(handle->accepted_fd);
+    return uv_guess_handle(handle->accepted_fd);
 }
 
 
@@ -319,21 +340,6 @@ int uv_pipe_chmod(uv_pipe_t* handle, int mode) {
       mode != (UV_WRITABLE | UV_READABLE))
     return UV_EINVAL;
 
-  if (fstat(uv__stream_fd(handle), &pipe_stat) == -1)
-    return UV__ERR(errno);
-
-  desired_mode = 0;
-  if (mode & UV_READABLE)
-    desired_mode |= S_IRUSR | S_IRGRP | S_IROTH;
-  if (mode & UV_WRITABLE)
-    desired_mode |= S_IWUSR | S_IWGRP | S_IWOTH;
-
-  /* Exit early if pipe already has desired mode. */
-  if ((pipe_stat.st_mode & desired_mode) == desired_mode)
-    return 0;
-
-  pipe_stat.st_mode |= desired_mode;
-
   /* Unfortunately fchmod does not work on all platforms, we will use chmod. */
   name_len = 0;
   r = uv_pipe_getsockname(handle, NULL, &name_len);
@@ -350,8 +356,82 @@ int uv_pipe_chmod(uv_pipe_t* handle, int mode) {
     return r;
   }
 
+  /* stat must be used as fstat has a bug on Darwin */
+  if (stat(name_buffer, &pipe_stat) == -1) {
+    uv__free(name_buffer);
+    return -errno;
+  }
+
+  desired_mode = 0;
+  if (mode & UV_READABLE)
+    desired_mode |= S_IRUSR | S_IRGRP | S_IROTH;
+  if (mode & UV_WRITABLE)
+    desired_mode |= S_IWUSR | S_IWGRP | S_IWOTH;
+
+  /* Exit early if pipe already has desired mode. */
+  if ((pipe_stat.st_mode & desired_mode) == desired_mode) {
+    uv__free(name_buffer);
+    return 0;
+  }
+
+  pipe_stat.st_mode |= desired_mode;
+
   r = chmod(name_buffer, pipe_stat.st_mode);
   uv__free(name_buffer);
 
   return r != -1 ? 0 : UV__ERR(errno);
+}
+
+
+int uv_pipe(uv_os_fd_t fds[2], int read_flags, int write_flags) {
+  uv_os_fd_t temp[2];
+  int err;
+#if defined(__FreeBSD__) || defined(__linux__)
+  int flags = O_CLOEXEC;
+
+  if ((read_flags & UV_NONBLOCK_PIPE) && (write_flags & UV_NONBLOCK_PIPE))
+    flags |= UV_FS_O_NONBLOCK;
+
+  if (pipe2(temp, flags))
+    return UV__ERR(errno);
+
+  if (flags & UV_FS_O_NONBLOCK) {
+    fds[0] = temp[0];
+    fds[1] = temp[1];
+    return 0;
+  }
+#else
+  if (pipe(temp))
+    return UV__ERR(errno);
+
+  if ((err = uv__cloexec(temp[0], 1)))
+    goto fail;
+
+  if ((err = uv__cloexec(temp[1], 1)))
+    goto fail;
+#endif
+
+  if (read_flags & UV_NONBLOCK_PIPE)
+    if ((err = uv__nonblock(temp[0], 1)))
+      goto fail;
+
+  if (write_flags & UV_NONBLOCK_PIPE)
+    if ((err = uv__nonblock(temp[1], 1)))
+      goto fail;
+
+  fds[0] = temp[0];
+  fds[1] = temp[1];
+  return 0;
+
+fail:
+  uv__close(temp[0]);
+  uv__close(temp[1]);
+  return err;
+}
+
+
+int uv__make_pipe(int fds[2], int flags) {
+  return uv_pipe(fds,
+                 flags & UV_NONBLOCK_PIPE,
+                 flags & UV_NONBLOCK_PIPE);
 }
