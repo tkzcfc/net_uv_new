@@ -278,7 +278,15 @@ void NetMsgMgr::removeSessionInfo(uint32_t sessionID)
 		fc_free(it->second->buf);
 		fc_free(it->second);
 
-		m_sessionInfoVec.erase(std::find(m_sessionInfoVec.begin(), m_sessionInfoVec.end(), it->second));
+		for (auto it_info = m_sessionInfoVec.begin(); it_info != m_sessionInfoVec.end(); ++it_info)
+		{
+			if ((*it_info) == it->second)
+			{
+				m_sessionInfoVec.erase(it_info);
+				break;
+			}
+		}
+
 		m_sessionInfoMap.erase(it);
 	}
 }

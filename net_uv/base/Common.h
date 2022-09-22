@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <iostream>
+#include <cstring>
 
 
 NS_NET_UV_BEGIN
