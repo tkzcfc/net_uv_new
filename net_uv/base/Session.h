@@ -66,12 +66,12 @@ protected:
 
 void Session::setSessionClose(const SessionCloseCall& call)
 {
-	m_sessionCloseCallback = std::move(call);
+	m_sessionCloseCallback = call;
 }
 
 void Session::setSessionRecvCallback(const SessionRecvCall& call)
 {
-	m_sessionRecvCallback = std::move(call);
+	m_sessionRecvCallback = call;
 }
 
 SessionManager* Session::getSessionManager()

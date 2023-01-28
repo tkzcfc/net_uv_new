@@ -163,12 +163,12 @@ void KCPSocket::udpSendStr(const std::string& str)
 
 void KCPSocket::setNewConnectionCallback(const KCPSocketNewConnectionCall& call)
 {
-	m_newConnectionCall = std::move(call);
+	m_newConnectionCall = call;
 }
 
 void KCPSocket::setConnectFilterCallback(const KCPSocketConnectFilterCall& call)
 {
-	m_connectFilterCall = std::move(call);
+	m_connectFilterCall = call;
 }
 
 void KCPSocket::setConv(IUINT32 conv)

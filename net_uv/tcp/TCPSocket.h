@@ -76,7 +76,7 @@ uv_loop_t* TCPSocket::getLoop()
 
 void TCPSocket::setNewConnectionCallback(const TCPSocketNewConnectionCall& call)
 {
-	m_newConnectionCall = std::move(call);
+	m_newConnectionCall = call;
 }
 
 NS_NET_UV_END

@@ -66,12 +66,12 @@ Session* HttpServer::getCurSession()
 
 void HttpServer::setHttpCallback(const HttpServerCallback& call)
 {
-	m_svrCallback = std::move(call);
+	m_svrCallback = call;
 }
 
 void HttpServer::setCloseCallback(const HttpServerCloseCallback& call)
 {
-	m_svrCloseCallback = std::move(call);
+	m_svrCloseCallback = call;
 }
 
 NS_NET_UV_END

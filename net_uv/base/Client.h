@@ -71,27 +71,27 @@ protected:
 
 void Client::setConnectCallback(const ClientConnectCall& call)
 {
-	m_connectCall = std::move(call);
+	m_connectCall = call;
 }
 
 void Client::setDisconnectCallback(const ClientDisconnectCall& call)
 {
-	m_disconnectCall = std::move(call);
+	m_disconnectCall = call;
 }
 
 void Client::setRecvCallback(const ClientRecvCall& call)
 {
-	m_recvCall = std::move(call);
+	m_recvCall = call;
 }
 
 void Client::setClientCloseCallback(const ClientCloseCall& call)
 {
-	m_clientCloseCall = std::move(call);
+	m_clientCloseCall = call;
 }
 
 void Client::setRemoveSessionCallback(const ClientRemoveSessionCall& call)
 {
-	m_removeSessionCall = std::move(call);
+	m_removeSessionCall = call;
 }
 
 NS_NET_UV_END

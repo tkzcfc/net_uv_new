@@ -66,7 +66,7 @@ uv_udp_t* UDPSocket::getUdp()
 
 void UDPSocket::setReadCallback(const UDPReadCallback& call)
 {
-	m_readCall = std::move(call);
+	m_readCall = call;
 }
 
 

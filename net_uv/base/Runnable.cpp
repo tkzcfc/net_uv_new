@@ -3,6 +3,7 @@
 NS_NET_UV_BEGIN
 
 Runnable::Runnable()
+	: m_userData(NULL)
 {
 }
 

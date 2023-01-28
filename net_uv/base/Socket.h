@@ -115,17 +115,17 @@ void Socket::setIsIPV6(bool isIPV6)
 
 void Socket::setConnectCallback(const SocketConnectCall& call)
 {
-	m_connectCall = std::move(call);
+	m_connectCall = call;
 }
 
 void Socket::setCloseCallback(const SocketCloseCall& call)
 {
-	m_closeCall = std::move(call);
+	m_closeCall = call;
 }
 
 void Socket::setRecvCallback(const SocketRecvCall& call)
 {
-	m_recvCall = std::move(call);
+	m_recvCall = call;
 }
 
 void Socket::setUserdata(void* userdata)

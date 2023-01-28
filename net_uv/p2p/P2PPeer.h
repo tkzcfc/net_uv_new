@@ -173,42 +173,42 @@ protected:
 
 void P2PPeer::setStartCallback(const P2PPeerStartCallback& call)
 {
-	m_startCallback = std::move(call);
+	m_startCallback = call;
 }
 
 void P2PPeer::setNewConnectCallback(const P2PPeerNewConnectCallback& call)
 {
-	m_newConnectCallback = std::move(call);
+	m_newConnectCallback = call;
 }
 
 void P2PPeer::setConnectToPeerCallback(const P2PPeerConnectToPeerCallback& call)
 {
-	m_connectToPeerCallback = std::move(call);
+	m_connectToPeerCallback = call;
 }
 
 void P2PPeer::setConnectToTurnCallback(const P2PPeerConnectToTurnCallback& call)
 {
-	m_connectToTurnCallback = std::move(call);
+	m_connectToTurnCallback = call;
 }
 
 void P2PPeer::setDisConnectToPeerCallback(const P2PPeerDisConnectToPeerCallback& call)
 {
-	m_disConnectToPeerCallback = std::move(call);
+	m_disConnectToPeerCallback = call;
 }
 
 void P2PPeer::setDisConnectToTurnCallback(const P2PPeerDisConnectToTurnCallback& call)
 {
-	m_disConnectToTurnCallback = std::move(call);
+	m_disConnectToTurnCallback = call;
 }
 
 void P2PPeer::setRecvCallback(const P2PPeerRecvCallback& call)
 {
-	m_recvCallback = std::move(call);
+	m_recvCallback = call;
 }
 
 void P2PPeer::setCloseCallback(const P2PPeerCloseCallback& call)
 {
-	m_closeCallback = std::move(call);
+	m_closeCallback = call;
 }
 
 NS_NET_UV_END

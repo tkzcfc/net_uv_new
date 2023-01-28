@@ -124,27 +124,27 @@ UDPSocket* P2PPipe::getSocket()
 
 void P2PPipe::setRecvJsonCallback(const P2PPipeRecvJsonCallback& call)
 {
-	m_recvJsonCallback = std::move(call);
+	m_recvJsonCallback = call;
 }
 
 void P2PPipe::setRecvKcpCallback(const P2PPipeRecvKcpCallback& call)
 {
-	m_recvKcpCallback = std::move(call);
+	m_recvKcpCallback = call;
 }
 
 void P2PPipe::setNewSessionCallback(const P2PPipeNewSessionCallback& call)
 {
-	m_newSessionCallback = std::move(call);
+	m_newSessionCallback = call;
 }
 
 void P2PPipe::setNewKcpCreateCallback(const P2PPipeNewKcpCreateCallback& call)
 {
-	m_newKcpCreateCallback = std::move(call);
+	m_newKcpCreateCallback = call;
 }
 
 void P2PPipe::setRemoveSessionCallback(const P2PPipeRemoveSessionCallback& call)
 {
-	m_removeSessionCallback = std::move(call);
+	m_removeSessionCallback = call;
 }
 
 NS_NET_UV_END

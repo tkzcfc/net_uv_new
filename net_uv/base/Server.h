@@ -75,22 +75,22 @@ protected:
 
 void Server::setCloseCallback(const ServerCloseCall& call)
 {
-	m_closeCall = std::move(call);
+	m_closeCall = call;
 }
 
 void Server::setNewConnectCallback(const ServerNewConnectCall& call)
 {
-	m_newConnectCall = std::move(call);
+	m_newConnectCall = call;
 }
 
 void Server::setRecvCallback(const ServerRecvCall& call)
 {
-	m_recvCall = std::move(call);
+	m_recvCall = call;
 }
 
 void Server::setDisconnectCallback(const ServerDisconnectCall& call)
 {
-	m_disconnectCall = std::move(call);
+	m_disconnectCall = call;
 }
 
 void Server::setListenPort(uint32_t port)
