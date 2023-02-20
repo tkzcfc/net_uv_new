@@ -511,13 +511,13 @@ void KCPSocket::initKcp(IUINT32 conv)
 
 	ikcp_wndsize(m_kcp, 128, 128);
 
-	// Æô¶¯¿ìËÙÄ£Ê½
-	// µÚ¶þ¸ö²ÎÊý nodelay-ÆôÓÃÒÔºóÈô¸É³£¹æ¼ÓËÙ½«Æô¶¯
-	// µÚÈý¸ö²ÎÊý intervalÎªÄÚ²¿´¦ÀíÊ±ÖÓ£¬Ä¬ÈÏÉèÖÃÎª 10ms
-	// µÚËÄ¸ö²ÎÊý resendÎª¿ìËÙÖØ´«Ö¸±ê£¬ÉèÖÃÎª2
-	// µÚÎå¸ö²ÎÊý ÎªÊÇ·ñ½ûÓÃ³£¹æÁ÷¿Ø£¬ÕâÀï½ûÖ¹
-	ikcp_nodelay(m_kcp, 1, 10, 2, 1);
-	//ikcp_nodelay(m_kcp, 1, 5, 1, 1); // ÉèÖÃ³É1´ÎACK¿çÔ½Ö±½ÓÖØ´«, ÕâÑù·´Ó¦ËÙ¶È»á¸ü¿ì. ÄÚ²¿Ê±ÖÓ5ºÁÃë.
+	// å¯åŠ¨å¿«é€Ÿæ¨¡å¼
+	// ç¬¬äºŒä¸ªå‚æ•° nodelay-å¯ç”¨ä»¥åŽè‹¥å¹²å¸¸è§„åŠ é€Ÿå°†å¯åŠ¨
+	// ç¬¬ä¸‰ä¸ªå‚æ•° intervalä¸ºå†…éƒ¨å¤„ç†æ—¶é’Ÿï¼Œé»˜è®¤è®¾ç½®ä¸º 10ms
+	// ç¬¬å››ä¸ªå‚æ•° resendä¸ºå¿«é€Ÿé‡ä¼ æŒ‡æ ‡ï¼Œè®¾ç½®ä¸º2
+	// ç¬¬äº”ä¸ªå‚æ•° ä¸ºæ˜¯å¦ç¦ç”¨å¸¸è§„æµæŽ§ï¼Œè¿™é‡Œç¦æ­¢
+	ikcp_nodelay(m_kcp, 1, 10, 20, 1);
+	//ikcp_nodelay(m_kcp, 1, 5, 1, 1); // è®¾ç½®æˆ1æ¬¡ACKè·¨è¶Šç›´æŽ¥é‡ä¼ , è¿™æ ·ååº”é€Ÿåº¦ä¼šæ›´å¿«. å†…éƒ¨æ—¶é’Ÿ5æ¯«ç§’.
 }
 
 void KCPSocket::releaseKcp()
