@@ -246,23 +246,23 @@ void P2PPipe::close()
 
 void P2PPipe::on_udp_read(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, const struct sockaddr* addr, unsigned flags)
 {
-	// 不支持IPV6
+	// 涓嶆敮鎸両PV6
 	if (addr->sa_family != AF_INET)
 		return;
 
-	// 长度校验失败
+	// 闀垮害鏍￠獙澶辫触
 	if (nread < sizeof(P2PMessage))
 		return;
 
 	P2PMessage* msg = (P2PMessage*)buf->base;
 
-	// 长度校验失败
+	// 闀垮害鏍￠獙澶辫触
 	if (msg->msgLen != nread - sizeof(P2PMessage))
 	{
 		return;
 	}
 
-	// 消息ID校验失败
+	// 娑堟伅ID鏍￠獙澶辫触
 	if (msg->msgID <= P2PMessageID::P2P_MSG_ID_BEGIN || P2PMessageID::P2P_MSG_ID_END <= msg->msgID)
 		return;
 
@@ -272,7 +272,7 @@ void P2PPipe::on_udp_read(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, 
 	info.ip = recv_addr->sin_addr.s_addr;
 	info.port = ntohs(recv_addr->sin_port);
 	
-	// 合法消息
+	// 鍚堟硶娑堟伅
 	char* data = buf->base + sizeof(P2PMessage);
 
 #if OPEN_NET_UV_DEBUG
@@ -292,14 +292,14 @@ void P2PPipe::on_udp_read(uv_udp_t* handle, ssize_t nread, const uv_buf_t* buf, 
 		return;
 	}
 
-	// kcp格式数据
+	// kcp鏍煎紡鏁版嵁
 	if (msg->msgID == P2PMessageID::P2P_MSG_ID_KCP)
 	{
 		on_recv_kcpMsg(info.key, data, msg->msgLen, addr);
 		return;
 	}
 
-	// json格式数据
+	// json鏍煎紡鏁版嵁
 	if (P2PMessageID::P2P_MSG_ID_JSON_BEGIN < msg->msgID && msg->msgID < P2PMessageID::P2P_MSG_ID_JSON_END)
 	{
 		std::string content(data, msg->msgLen);
@@ -419,18 +419,8 @@ void P2PPipe::createKcp(uint64_t key, uint32_t conv, uint32_t tag)
 		ikcpcb* kcp = ikcp_create(conv, &it->second);
 		kcp->output = P2PPipe::udp_output;
 
-		ikcp_wndsize(kcp, 128, 128);
-
-		// 启动快速模式
-		// 第二个参数 nodelay-启用以后若干常规加速将启动
-		// 第三个参数 interval为内部处理时钟，默认设置为 10ms
-		// 第四个参数 resend为快速重传指标，设置为2
-		// 第五个参数 为是否禁用常规流控，这里禁止
-		// 延迟更小占用带宽更多
-		ikcp_nodelay(kcp, 1, 10, 2, 1);
-		
-		// 带宽浪费少,最大速度更大
-		//ikcp_nodelay(kcp, 1, 10, 0, 0);
+		ikcp_wndsize(kcp, 1024, 1024);
+		ikcp_nodelay(kcp, 1, 10, 0, 0);
 
 		it->second.kcp = kcp;
 
